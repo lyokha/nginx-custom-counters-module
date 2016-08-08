@@ -289,8 +289,7 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_OK;
     }
 
-    size = prev->cnt_data.nelts > 0 ? prev->cnt_data.nelts :
-            conf->cnt_data.nelts;
+    size = ngx_max(prev->cnt_data.nelts, conf->cnt_data.nelts);
 
     if (ngx_array_init(&child_data, cf->pool, size,
                        sizeof(ngx_http_cnt_data_t)) != NGX_OK)

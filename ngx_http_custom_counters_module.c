@@ -289,7 +289,8 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_OK;
     }
 
-    size = prev->cnt_data.nelts > 0 ? prev->cnt_data.nelts : 1;
+    size = prev->cnt_data.nelts > 0 ? prev->cnt_data.nelts :
+            conf->cnt_data.nelts;
 
     if (ngx_array_init(&child_data, cf->pool, size,
                        sizeof(ngx_http_cnt_data_t)) != NGX_OK)
@@ -666,7 +667,9 @@ ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
-    return ngx_http_cnt_update(r, 1);
+    (void) ngx_http_cnt_update(r, 1);
+
+    return NGX_DECLINED;
 }
 
 
@@ -677,7 +680,7 @@ ngx_http_cnt_response_header_filter(ngx_http_request_t *r)
         return ngx_http_next_header_filter(r);
     }
 
-    ngx_http_cnt_update(r, 0);
+    (void) ngx_http_cnt_update(r, 0);
 
     return ngx_http_next_header_filter(r);
 }
@@ -718,6 +721,6 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
         }
     }
 
-    return NGX_DECLINED;
+    return NGX_OK;
 }
 

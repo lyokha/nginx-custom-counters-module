@@ -38,15 +38,15 @@ early_counter $ecnt_name1 set 1;
 early_counter $ecnt_name2 inc 1;
 ```
 
-The meaning of the arguments correspond to that of the normal counters. The same
-counter can be declared both as normal and early if the location configuration
-merged hierarchies do not contain the both simultaneously.
+Meaning of the arguments correspond to that of the normal counters. A single
+counter can be declared both as normal and early if none of the merged location
+configuration hierarchies contains the both types simultaneously.
 
 Sharing between virtual servers
 -------------------------------
 
 Counters are shared between virtual servers if the latter have equal last
-*server names*. Also be aware that the counters always require a server name to
+*server names*. Also be aware that counters always require a server name to
 identify themselves: nginx just won't start if a counter has been declared
 inside a virtual server without a server name.
 

@@ -8,7 +8,7 @@ Directives
 ----------
 
 Normal counters are updated on a later request's phase while filtering headers
-of the response. They can be declared in *server*, *location*, and *location-if*
+of the response. They can be declared on *server*, *location*, and *location-if*
 levels. Their cumulative values are merged through all the levels from the top
 to the bottom when nginx reads configuration.
 
@@ -21,9 +21,10 @@ counter $cnt_name2 inc 1;
 
 Variables ``$cnt_name1`` and ``$cnt_name2`` can be accessed elsewhere in the
 configuration: they return values held in a shared memory and must be equal
-across all the workers at the same time. The second argument of the directive is
-an operation --- *set* or *inc* (i.e. *increment*). The third argument --- an
-integer (possibly negative) is optional, its default value is *1*.
+across all workers at the same moment of time. The second argument of the
+directive is an operation --- *set* or *inc* (i.e. *increment*). The third
+argument --- an integer (possibly negative), is optional, its default value is
+*1*.
 
 Early counters are updated before *rewrite* directives and can be used to mark
 entry points before any *rewrites* and *ifs*. They are allowed only on the
@@ -44,9 +45,10 @@ merged hierarchies do not contain the both simultaneously.
 Sharing between virtual servers
 -------------------------------
 
-Counters are shared between virtual servers if the latter have the same last
-*server name*. Also be aware that the counters require server name to identify
-themselves.
+Counters are shared between virtual servers if the latter have equal last
+*server names*. Also be aware that the counters always require a server name to
+identify themselves: nginx just won't start if a counter has been declared
+inside a virtual server without a server name.
 
 Example
 -------

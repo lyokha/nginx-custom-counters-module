@@ -22,9 +22,9 @@ counter $cnt_name2 inc 1;
 Variables ``$cnt_name1`` and ``$cnt_name2`` can be accessed elsewhere in the
 configuration: they return values held in a shared memory and must be equal
 across all workers at the same moment of time. The second argument of the
-directive is an operation --- *set* or *inc* (i.e. *increment*). The third
-argument --- an integer (possibly negative), is optional, its default value is
-*1*.
+directive is an operation &mdash; *set* or *inc* (i.e. *increment*). The third
+argument &mdash; an integer (possibly negative), is optional, its default value
+is *1*.
 
 Early counters are updated before *rewrite* directives and can be used to mark
 entry points before any *rewrites* and *ifs*. They are allowed only on the

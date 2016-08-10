@@ -40,7 +40,7 @@ early_counter $ecnt_name2 inc 1;
 
 Meaning of the arguments correspond to that of the normal counters. A single
 counter can be declared both as normal and early if none of the merged location
-configuration hierarchies contains the both types simultaneously.
+configuration hierarchies contains both the types simultaneously.
 
 Sharing between virtual servers
 -------------------------------

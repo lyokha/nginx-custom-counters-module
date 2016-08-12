@@ -37,10 +37,18 @@ typedef enum
 
 typedef struct
 {
+    ngx_int_t                  self;
+    ngx_uint_t                 negative;
+} ngx_http_cnt_rt_vars_data_t;
+
+
+typedef struct
+{
     ngx_http_cnt_op_e          op;
     ngx_int_t                  self;
     ngx_int_t                  idx;
     ngx_int_t                  value;
+    ngx_array_t                rt_vars;
     ngx_uint_t                 early;
 } ngx_http_cnt_data_t;
 
@@ -195,7 +203,6 @@ ngx_http_cnt_init(ngx_conf_t *cf)
     }
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers);
-
     if (h == NULL) {
         return NGX_ERROR;
     }
@@ -278,30 +285,46 @@ ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_cnt_loc_conf_t  *prev = parent;
-    ngx_http_cnt_loc_conf_t  *conf = child;
+    ngx_http_cnt_loc_conf_t      *prev = parent;
+    ngx_http_cnt_loc_conf_t      *conf = child;
 
-    ngx_uint_t                i, size;
-    ngx_http_cnt_data_t      *cnt_data;
-    ngx_array_t               child_data;
+    ngx_uint_t                    i, j, size;
+    ngx_http_cnt_data_t          *cnt_data, *prev_cnt_data;
+    ngx_array_t                   child_data;
+    ngx_http_cnt_rt_vars_data_t  *rt_var;
 
     if (prev->cnt_data.nelts == 0 && conf->cnt_data.nelts == 0) {
         return NGX_CONF_OK;
     }
 
     size = ngx_max(prev->cnt_data.nelts, conf->cnt_data.nelts);
-
     if (ngx_array_init(&child_data, cf->pool, size,
                        sizeof(ngx_http_cnt_data_t)) != NGX_OK)
     {
         return NGX_CONF_ERROR;
     }
+
+    prev_cnt_data = prev->cnt_data.elts;
     for (i = 0; i < prev->cnt_data.nelts; i++) {
         cnt_data = ngx_array_push(&child_data);
         if (cnt_data == NULL) {
             return NGX_CONF_ERROR;
         }
-        *cnt_data = ((ngx_http_cnt_data_t *) prev->cnt_data.elts)[i];
+        *cnt_data = prev_cnt_data[i];
+        size = cnt_data->rt_vars.nelts;
+        if (ngx_array_init(&cnt_data->rt_vars, cf->pool, size,
+                           sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
+        {
+            return NGX_CONF_ERROR;
+        }
+        for (j = 0; j < size; j++) {
+            rt_var = ngx_array_push(&cnt_data->rt_vars);
+            if (rt_var == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
+                                prev_cnt_data[i].rt_vars.elts)[j];
+        }
     }
 
     cnt_data = conf->cnt_data.elts;
@@ -411,6 +434,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     ngx_uint_t                    *vars, *var;
     ngx_http_cnt_var_data_t       *var_data;
     ngx_array_t                   *v_data;
+    ngx_http_cnt_rt_vars_data_t   *rt_var;
     ngx_int_t                      idx = NGX_ERROR, v_idx;
     ngx_int_t                      val = 1;
 
@@ -565,22 +589,44 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         }
     }
 
+    if (ngx_array_init(&cnt_data.rt_vars, cf->pool, 1,
+                       sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
+    {
+        return NGX_CONF_ERROR;
+    }
+
     if (cf->args->nelts == 4) {
         ngx_uint_t  negative = 0;
 
-        if (value[3].data[0] == '-') {
+        if (value[3].len > 1 && value[3].data[0] == '-') {
             value[3].len--;
             value[3].data++;
             negative = 1;
         }
-        val = ngx_atoi(value[3].data, value[3].len);
-        if (val == NGX_ERROR) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "not a number \"%V\"", &value[3]);
-            return NGX_CONF_ERROR;
-        }
-        if (negative) {
-            val = -val;
+        if (value[3].len > 1 && value[3].data[0] == '$') {
+            value[3].len--;
+            value[3].data++;
+            val = ngx_http_get_variable_index(cf, &value[3]);
+            if (val == NGX_ERROR) {
+                return NGX_CONF_ERROR;
+            }
+            rt_var = ngx_array_push(&cnt_data.rt_vars);
+            if (rt_var == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            rt_var->self = val;
+            rt_var->negative = negative;
+            val = 0;
+        } else {
+            val = ngx_atoi(value[3].data, value[3].len);
+            if (val == NGX_ERROR) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "not a number \"%V\"", &value[3]);
+                return NGX_CONF_ERROR;
+            }
+            if (negative) {
+                val = -val;
+            }
         }
     }
 
@@ -625,6 +671,7 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
 
     ngx_uint_t                         i;
     ngx_http_cnt_data_t               *new_data;
+    ngx_http_cnt_rt_vars_data_t       *rt_var;
     ngx_int_t                          idx = NGX_ERROR;
 
     for (i = 0; i < dst->nelts; i++) {
@@ -652,6 +699,16 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
                 new_data->op = ngx_http_cnt_op_set;
             }
             new_data->value += cnt_data->value;
+            for (i = 0; i < cnt_data->rt_vars.nelts; i++) {
+                rt_var = ngx_array_push(&new_data->rt_vars);
+                if (rt_var == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+                *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
+                                    cnt_data->rt_vars.elts)[i];
+            }
+        } else {
+            *new_data = *cnt_data;
         }
     }
 
@@ -688,12 +745,15 @@ ngx_http_cnt_response_header_filter(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
 {
-    ngx_uint_t                     i;
+    ngx_uint_t                     i, j;
     ngx_http_cnt_srv_conf_t       *scf;
     ngx_http_cnt_loc_conf_t       *lcf;
     ngx_http_cnt_data_t           *cnt_data;
     ngx_atomic_t                  *data, *dst;
     ngx_slab_pool_t               *shpool;
+    ngx_http_cnt_rt_vars_data_t   *rt_vars;
+    ngx_http_variable_value_t     *var;
+    ngx_int_t                      value, val;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NULL) {
@@ -709,14 +769,29 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
             continue;
         }
         dst = &data[cnt_data[i].idx];
+        rt_vars = cnt_data[i].rt_vars.elts;
+        value = cnt_data[i].value;
+        for (j = 0; j < cnt_data[i].rt_vars.nelts; j++) {
+            var = ngx_http_get_indexed_variable(r, rt_vars[j].self);
+            if (var == NULL || var->valid == 0 || var->not_found != 0) {
+                continue;
+            }
+            val = ngx_atoi(var->data, var->len);
+            if (val == NGX_ERROR) {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                              "custom counters: not a number \"%v\"", var);
+                continue;
+            }
+            value += rt_vars[j].negative ? -val : val;
+        }
         if (cnt_data[i].op == ngx_http_cnt_op_set) {
             shpool = (ngx_slab_pool_t *) scf->cnt_set->data->shm.addr;
             ngx_shmtx_lock(&shpool->mutex);
-            *dst = cnt_data[i].value;
+            *dst = value;
             ngx_shmtx_unlock(&shpool->mutex);
 
         } else if (cnt_data[i].op == ngx_http_cnt_op_inc) {
-            ngx_atomic_fetch_add(dst, cnt_data[i].value);
+            ngx_atomic_fetch_add(dst, value);
         }
     }
 

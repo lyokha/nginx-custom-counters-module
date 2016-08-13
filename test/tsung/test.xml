@@ -50,10 +50,10 @@
                 <http url="/test?b=1" method="GET" version="1.0"/>
             </request>
             <request>
-                <http url="/test_rewrite?b=1&amp;a=1" method="GET" version="1.0"/>
+                <http url="/test/rewrite?b=1&amp;a=1" method="GET" version="1.0"/>
             </request>
             <request>
-                <http url="/test_rewrite?b=1&amp;a1=1" method="GET" version="1.0"/>
+                <http url="/test/rewrite?b=1&amp;a1=1" method="GET" version="1.0"/>
             </request>
         </session>
     </sessions>

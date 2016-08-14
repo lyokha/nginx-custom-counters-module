@@ -136,31 +136,31 @@ A session example (based on the configuration above)
 ----------------------------------------------------
 
 ```ShellSession
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/'
 all = 0 | all?a = 0 | /test = 0 | /test?a = 0 | /test?b = 0 | /test/rewrite = 0
-# curl 'http://127.0.0.1:8010/test'
+$ curl 'http://127.0.0.1:8010/test'
 All requests before this: 0
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/'
 all = 1 | all?a = 0 | /test = 1 | /test?a = 0 | /test?b = 0 | /test/rewrite = 0
-# curl 'http://127.0.0.1:8010/?a=1'
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8010/?a=1'
+$ curl 'http://127.0.0.1:8020/'
 all = 2 | all?a = 1 | /test = 1 | /test?a = 0 | /test?b = 0 | /test/rewrite = 0
-# curl 'http://127.0.0.1:8010/test?b=1'
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8010/test?b=1'
+$ curl 'http://127.0.0.1:8020/'
 all = 3 | all?a = 1 | /test = 2 | /test?a = 0 | /test?b = 1 | /test/rewrite = 0
-# curl 'http://127.0.0.1:8010/test?b=1&a=2'
+$ curl 'http://127.0.0.1:8010/test?b=1&a=2'
 All requests before this: 3
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/'
 all = 4 | all?a = 2 | /test = 3 | /test?a = 1 | /test?b = 1 | /test/rewrite = 0
-# curl 'http://127.0.0.1:8010/test/rewrite?b=1&a=2'
+$ curl 'http://127.0.0.1:8010/test/rewrite?b=1&a=2'
 All requests before this: 4
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 3 | /test = 4 | /test?a = 2 | /test?b = 1 | /test/rewrite = 1
-# curl 'http://127.0.0.1:8020/reset/a/0'
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/reset/a/0'
+$ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 0 | /test = 4 | /test?a = 0 | /test?b = 1 | /test/rewrite = 1
-# curl 'http://127.0.0.1:8020/reset/a/9'
-# curl 'http://127.0.0.1:8020/'
+$ curl 'http://127.0.0.1:8020/reset/a/9'
+$ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 9 | /test = 4 | /test?a = 9 | /test?b = 1 | /test/rewrite = 1
 ```
 

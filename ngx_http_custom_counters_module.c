@@ -437,6 +437,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     ngx_http_cnt_rt_vars_data_t   *rt_var;
     ngx_int_t                      idx = NGX_ERROR, v_idx;
     ngx_int_t                      val = 1;
+    ngx_uint_t                     negative = 0;
 
     mcf = ngx_http_conf_get_module_main_conf(cf,
                                              ngx_http_custom_counters_module);
@@ -596,8 +597,6 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     }
 
     if (cf->args->nelts == 4) {
-        ngx_uint_t  negative = 0;
-
         if (value[3].len > 1 && value[3].data[0] == '-') {
             value[3].len--;
             value[3].data++;
@@ -748,12 +747,16 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_uint_t                     i, j;
     ngx_http_cnt_srv_conf_t       *scf;
     ngx_http_cnt_loc_conf_t       *lcf;
+    ngx_http_core_main_conf_t     *cmcf;
     ngx_http_cnt_data_t           *cnt_data;
     ngx_atomic_t                  *data, *dst;
     ngx_slab_pool_t               *shpool;
     ngx_http_cnt_rt_vars_data_t   *rt_vars;
     ngx_http_variable_value_t     *var;
     ngx_int_t                      value, val;
+    ngx_str_t                      base_var;
+    ngx_http_variable_t           *v;
+    ngx_uint_t                     negative;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NULL) {
@@ -773,14 +776,29 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
         value = cnt_data[i].value;
         for (j = 0; j < cnt_data[i].rt_vars.nelts; j++) {
             var = ngx_http_get_indexed_variable(r, rt_vars[j].self);
-            if (var == NULL || var->valid == 0 || var->not_found != 0) {
+            if (var == NULL || !var->valid || var->not_found) {
                 continue;
             }
-            val = ngx_atoi(var->data, var->len);
+            negative = 0;
+            base_var.len = var->len;
+            base_var.data = var->data;
+            if (var->len > 1 && var->data[0] == '-') {
+                base_var.len--;
+                base_var.data++;
+                negative = 1;
+            }
+            val = ngx_atoi(base_var.data, base_var.len);
             if (val == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "custom counters: not a number \"%v\"", var);
+                cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
+                v = cmcf->variables.elts;
+                ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+                              "[custom counters] variable \"%V\" has value "
+                              "\"%v\" which is not a number",
+                              &v[rt_vars[j].self].name, var);
                 continue;
+            }
+            if (negative) {
+                val = -val;
             }
             value += rt_vars[j].negative ? -val : val;
         }

@@ -23,7 +23,7 @@ counter $cnt_name2 inc $inc_cnt_name2;
 Variables ``$cnt_name1`` and ``$cnt_name2`` can be accessed elsewhere in the
 configuration: they return values held in a shared memory and must be equal
 across all workers at the same moment of time. The second argument of the
-directive is an operation &mdash; *set* or *inc* (i.e. *increment*). The third
+directive is an operation &mdash; *set* or *inc* (i.e. increment). The third
 argument &mdash; an integer (possibly negative) or a variable (possibly
 negated), is optional, its default value is *1*.
 
@@ -47,9 +47,9 @@ Sharing between virtual servers
 -------------------------------
 
 Counters are shared between virtual servers if the latter have equal last
-*server names*. Also be aware that counters always require a server name to
-identify themselves: nginx just won't start if a counter has been declared
-inside a virtual server without a server name.
+*server names* that form an identifier for the counter set. The counter set
+identifier may also be declared explicitly using directive ``counter_set_id``
+which must precede all server's counters declarations.
 
 Example
 -------
@@ -67,10 +67,10 @@ http {
     sendfile            on;
 
     server {
-        listen       8010;
-        server_name  main monitored;
-        error_log    /tmp/nginx-test-custom-counters-error.log warn;
-        access_log   /tmp/nginx-test-custom-counters-access.log;
+        listen          8010;
+        server_name     main monitored;
+        error_log       /tmp/nginx-test-custom-counters-error.log warn;
+        access_log      /tmp/nginx-test-custom-counters-access.log;
 
         counter $cnt_all_requests inc;
 
@@ -108,10 +108,12 @@ http {
     }
 
     server {
-        listen       8020;
-        server_name  server1 monitored;
+        listen          8020;
+        server_name     monitor;
+        counter_set_id  monitored;
+
         allow 127.0.0.1;
-        deny all;
+        deny  all;
 
         location / {
             echo -n "all = $cnt_all_requests";
@@ -119,7 +121,7 @@ http {
             echo -n " | /test = $cnt_test_requests";
             echo -n " | /test?a = $cnt_test_a_requests";
             echo -n " | /test?b = $cnt_test_b_requests";
-            echo " | /test/rewrite = $ecnt_test_requests";
+            echo    " | /test/rewrite = $ecnt_test_requests";
         }
 
         location ~* ^/reset/a/(\d+)$ {

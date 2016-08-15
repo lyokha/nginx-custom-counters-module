@@ -77,6 +77,7 @@ typedef struct {
 
 typedef struct {
     ngx_http_cnt_set_t        *cnt_set;
+    ngx_str_t                  cnt_set_id;
 } ngx_http_cnt_srv_conf_t;
 
 
@@ -96,12 +97,14 @@ static char *ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent,
 static ngx_int_t ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data);
 static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
-static char *ngx_http_cnt_counter_impl(ngx_conf_t *cf,
-    ngx_command_t *cmd, void *conf, ngx_uint_t early);
-static char *ngx_http_cnt_counter(ngx_conf_t *cf,
-    ngx_command_t *cmd, void *conf);
-static char *ngx_http_cnt_early_counter(ngx_conf_t *cf,
-    ngx_command_t *cmd, void *conf);
+static char *ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf, ngx_uint_t early);
+static char *ngx_http_cnt_counter(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
+static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
+static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
     ngx_http_cnt_data_t *cnt_data);
 static ngx_int_t ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r);
@@ -124,6 +127,12 @@ static ngx_command_t ngx_http_cnt_commands[] = {
       NGX_HTTP_LOC_CONF|NGX_CONF_TAKE23,
       ngx_http_cnt_early_counter,
       NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+    { ngx_string("counter_set_id"),
+      NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_http_cnt_counter_set_id,
+      NGX_HTTP_SRV_CONF_OFFSET,
       0,
       NULL },
 
@@ -170,7 +179,7 @@ ngx_http_cnt_init(ngx_conf_t *cf)
     ngx_http_core_srv_conf_t   **cscfp;
     ngx_http_cnt_main_conf_t    *mcf;
     ngx_http_cnt_srv_conf_t     *scf;
-    ngx_http_server_name_t      *sn;
+    ngx_str_t                    cnt_set_id;
     ngx_http_cnt_set_t          *cnt_set;
     ngx_http_handler_pt         *h;
 
@@ -183,15 +192,21 @@ ngx_http_cnt_init(ngx_conf_t *cf)
     for (i = 0; i < cmcf->servers.nelts; i++) {
         scf = cscfp[i]->ctx->srv_conf[
                 ngx_http_custom_counters_module.ctx_index];
-        if (scf->cnt_set != NULL || cscfp[i]->server_names.nelts == 0) {
+        cnt_set_id = scf->cnt_set_id;
+        if (scf->cnt_set != NULL
+            || (cnt_set_id.len == 0 && cscfp[i]->server_names.nelts == 0))
+        {
             continue;
         }
-        sn = &((ngx_http_server_name_t *) cscfp[i]->server_names.elts)[
-                cscfp[i]->server_names.nelts - 1];
+        if (cnt_set_id.len == 0) {
+            cnt_set_id = ((ngx_http_server_name_t *)
+                            cscfp[i]->server_names.elts)[
+                                cscfp[i]->server_names.nelts - 1].name;
+        }
         for (j = 0; j < mcf->cnt_sets.nelts; j++) {
-            if (cnt_set[j].name.len == sn->name.len
-                && ngx_strncmp(cnt_set[j].name.data, sn->name.data,
-                               sn->name.len) == 0)
+            if (cnt_set[j].name.len == cnt_set_id.len
+                && ngx_strncmp(cnt_set[j].name.data, cnt_set_id.data,
+                               cnt_set_id.len) == 0)
             {
                 scf->cnt_set = cnt_set;
                 break;
@@ -271,9 +286,13 @@ ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "merged server configurations have different "
-                           "server names");
+                           "counter sets");
         return NGX_CONF_ERROR;
     }
+    if (conf->cnt_set == NULL) {
+        conf->cnt_set = prev->cnt_set;
+    }
+    ngx_conf_merge_str_value(conf->cnt_set_id, prev->cnt_set_id, "");
 
     return NGX_CONF_OK;
 }
@@ -424,10 +443,9 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     ngx_http_core_srv_conf_t      *cscf;
     ngx_str_t                     *value;
     ngx_http_variable_t           *v;
-    ngx_http_server_name_t        *sn;
     ngx_http_cnt_set_t            *cnt_sets, *cnt_set;
     ngx_http_cnt_data_t            cnt_data;
-    ngx_str_t                      cnt_name;
+    ngx_str_t                      cnt_set_id, cnt_name;
     ngx_uint_t                    *vars, *var;
     ngx_http_cnt_var_data_t       *var_data;
     ngx_array_t                   *v_data;
@@ -442,21 +460,25 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
                                             ngx_http_custom_counters_module);
     cscf = ngx_http_conf_get_module_srv_conf(cf, ngx_http_core_module);
 
-    if (cscf->server_names.nelts == 0) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "custom counters require server name");
-        return NGX_CONF_ERROR;
-    }
+    cnt_set_id = scf->cnt_set_id;
 
-    sn = &((ngx_http_server_name_t *) cscf->server_names.elts)[
-            cscf->server_names.nelts - 1];
-
-    if (sn->name.len == 0)
-    {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "custom counters require not empty "
-                           "last server name");
-        return NGX_CONF_ERROR;
+    if (cnt_set_id.len == 0) {
+        if (cscf->server_names.nelts == 0) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "custom counters require directive "
+                               "\"counter_set_id\" or server name");
+            return NGX_CONF_ERROR;
+        }
+        cnt_set_id = ((ngx_http_server_name_t *) cscf->server_names.elts)[
+                            cscf->server_names.nelts - 1].name;
+        if (cnt_set_id.len == 0)
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "custom counters require directive "
+                               "\"counter_set_id\" or non-empty last server "
+                               "name");
+            return NGX_CONF_ERROR;
+        }
     }
 
     value = cf->args->elts;
@@ -472,9 +494,9 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     cnt_sets = mcf->cnt_sets.elts;
     if (scf->cnt_set == NULL) {
         for (i = 0; i < mcf->cnt_sets.nelts; i++) {
-            if (cnt_sets[i].name.len == sn->name.len
-                && ngx_strncmp(cnt_sets[i].name.data, sn->name.data,
-                               sn->name.len) == 0)
+            if (cnt_sets[i].name.len == cnt_set_id.len
+                && ngx_strncmp(cnt_sets[i].name.data, cnt_set_id.data,
+                               cnt_set_id.len) == 0)
             {
                 scf->cnt_set = &cnt_sets[i];
             }
@@ -485,8 +507,8 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         if (cnt_set == NULL) {
             return NGX_CONF_ERROR;
         }
-        cnt_set->name = sn->name;
-        cnt_name.len = ngx_http_cnt_shm_name_prefix.len + sn->name.len;
+        cnt_set->name = cnt_set_id;
+        cnt_name.len = ngx_http_cnt_shm_name_prefix.len + cnt_set_id.len;
         cnt_name.data = ngx_pnalloc(cf->pool, cnt_name.len);
         if (cnt_name.data == NULL) {
             return NGX_CONF_ERROR;
@@ -495,8 +517,8 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
                    ngx_http_cnt_shm_name_prefix.data,
                    ngx_http_cnt_shm_name_prefix.len);
         ngx_memcpy(cnt_name.data + ngx_http_cnt_shm_name_prefix.len,
-                   sn->name.data,
-                   sn->name.len);
+                   cnt_set_id.data,
+                   cnt_set_id.len);
         cnt_set->data = ngx_shared_memory_add(cf, &cnt_name, 8 * ngx_pagesize,
                                               &ngx_http_custom_counters_module);
         if (cnt_set->data == NULL) {
@@ -656,6 +678,29 @@ static char *
 ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     return ngx_http_cnt_counter_impl(cf, cmd, conf, 1);
+}
+
+
+static char *
+ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_cnt_srv_conf_t       *scf = conf;
+    ngx_str_t                     *value = cf->args->elts;
+
+    if (scf->cnt_set != NULL) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "directive \"counter_set_id\" must precede "
+                           "all server's custom counters declarations");
+        return NGX_CONF_ERROR;
+    }
+    if (scf->cnt_set_id.len > 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "duplicate directive \"counter_set_id\"");
+        return NGX_CONF_ERROR;
+    }
+    scf->cnt_set_id = value[1];
+
+    return NGX_CONF_OK;
 }
 
 

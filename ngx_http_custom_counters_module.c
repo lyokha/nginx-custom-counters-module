@@ -364,7 +364,7 @@ static ngx_int_t
 ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
                        uintptr_t  data)
 {
-    ngx_array_t                       *self = (ngx_array_t *) data;
+    ngx_array_t                       *v_data = (ngx_array_t *) data;
 
     ngx_uint_t                         i;
     ngx_http_cnt_srv_conf_t           *scf;
@@ -375,17 +375,17 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     u_char                            *buf, *last;
     static const ngx_uint_t            bufsz = 32;
 
-    if (self == NULL) {
+    if (v_data == NULL) {
         return NGX_ERROR;
     }
-    var_data = self->elts;
+    var_data = v_data->elts;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NULL || ((shm = scf->cnt_set->data) == NULL)) {
         return NGX_ERROR;
     }
 
-    for (i = 0; i < self->nelts; i++)
+    for (i = 0; i < v_data->nelts; i++)
     {
         if (var_data[i].cnt_set != scf->cnt_set) {
             continue;

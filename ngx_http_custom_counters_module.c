@@ -20,12 +20,9 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-#define STRLEN(X) (sizeof(X) - 1)
 
-
-static const char ngx_http_cnt_shm_name_prefix[] = "custom_counters_";
-static const char ngx_http_cnt_shm_name_prefix_len =
-    STRLEN(ngx_http_cnt_shm_name_prefix);
+static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
+    ngx_string("custom_counters_");
 
 
 typedef enum
@@ -489,15 +486,15 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
             return NGX_CONF_ERROR;
         }
         cnt_set->name = sn->name;
-        cnt_name.len = ngx_http_cnt_shm_name_prefix_len + sn->name.len;
+        cnt_name.len = ngx_http_cnt_shm_name_prefix.len + sn->name.len;
         cnt_name.data = ngx_pnalloc(cf->pool, cnt_name.len);
         if (cnt_name.data == NULL) {
             return NGX_CONF_ERROR;
         }
         ngx_memcpy(cnt_name.data,
-                   ngx_http_cnt_shm_name_prefix,
-                   ngx_http_cnt_shm_name_prefix_len);
-        ngx_memcpy(cnt_name.data + ngx_http_cnt_shm_name_prefix_len,
+                   ngx_http_cnt_shm_name_prefix.data,
+                   ngx_http_cnt_shm_name_prefix.len);
+        ngx_memcpy(cnt_name.data + ngx_http_cnt_shm_name_prefix.len,
                    sn->name.data,
                    sn->name.len);
         cnt_set->data = ngx_shared_memory_add(cf, &cnt_name, 8 * ngx_pagesize,

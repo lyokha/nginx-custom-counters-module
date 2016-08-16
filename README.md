@@ -166,3 +166,71 @@ $ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 9 | /test = 4 | /test?a = 9 | /test?b = 1 | /test/rewrite = 1
 ```
 
+Remarks on using location ifs and complex conditions
+----------------------------------------------------
+
+Originally in nginx *location ifs* were designed for a very special task:
+*replacing location configuration* when a given condition matches, not for
+*doing anything*. That's why using them for only checking a counter like when
+testing against ``$arg_a`` in location */test* is a bad idea in general. In
+contrast, *server ifs* do not change location configurations and can be used for
+checking increment or set values like ``$inc_a_requests``. In our example we can
+simply replace *location if* test
+
+```nginx
+            if ($arg_a) {
+                counter $cnt_test_a_requests inc;
+                break;
+            }
+```
+
+with
+
+```nginx
+            counter $cnt_test_a_requests $inc_a_requests;
+```
+
+However nginx *if* condition testing is not as powerful as it may require. If
+you need a full-fledged condition testing then consider binding increment or
+set variables to a full-featured programming language's handler. For example
+let's increment a counter when a *base64*-encoded value contains a version tag.
+To make all required computations, let's use Haskell and [*Nginx Haskell
+module*](http://github.com/lyokha/nginx-haskell-module).
+
+Put directive *haskell compile* with a haskell function *hasVTag* on *http
+level*.
+
+```nginx
+    haskell compile standalone /tmp/ngx_haskell.hs '
+
+import Data.ByteString.Base64
+import Data.Maybe
+import Text.Regex.PCRE
+
+hasVTag = either (const False) (isJust . matchOnce r) . decode
+    where r = makeRegex "\\\\bv=\\\\d+\\\\b" :: Regex
+
+NGX_EXPORT_B_Y (hasVTag)
+
+    ';
+```
+
+Then put next 2 lines in location */test*.
+
+```nginx
+            haskell_run hasVTag $hs_inc_cnt_vtag $cookie_misc;
+            counter $cnt_test_cookie_misc_vtag inc $hs_inc_cnt_vtag;
+```
+
+Counter *cnt_test_cookie_misc_vtag* increments when value of *cookie Misc*
+matches against a version tag compiled as a regular expression with *makeRegex*.
+
+By adding another line with *echo*
+
+```nginx
+            echo -n " | /test?misc:vtag = $cnt_test_cookie_misc_vtag";
+```
+
+into location */* in the second virtual server, the counter gets monitored just
+like other counters.
+

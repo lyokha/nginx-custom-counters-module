@@ -215,7 +215,7 @@ NGX_EXPORT_B_Y (hasVTag)
     ';
 ```
 
-Then put next 2 lines in location */test*.
+Then put next 2 lines into location */test*.
 
 ```nginx
             haskell_run hasVTag $hs_inc_cnt_vtag $cookie_misc;
@@ -232,5 +232,5 @@ By adding another line with *echo*
 ```
 
 into location */* in the second virtual server, the counter gets monitored just
-like other counters.
+like other custom counters.
 

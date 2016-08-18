@@ -51,6 +51,16 @@ Counters are shared between virtual servers if the latter have equal last
 identifier may also be declared explicitly using directive ``counter_set_id``
 which must precede all server's counters declarations.
 
+Reloading nginx configuration
+-----------------------------
+
+Counters *may* survive after nginx configuration reload, provided directive
+``counters_survive_reload`` was set on *main* or *server* configuration levels.
+Counters from a specific counter set *will not* survive if their number in the
+set has changed in the new configuration. Also avoid changing the order of
+counters declarations, otherwise survived counters will pick values of their
+mates that were standing on these position before reloading.
+
 Example
 -------
 
@@ -62,15 +72,19 @@ events {
     worker_connections  1024;
 }
 
+error_log               /tmp/nginx-test-custom-counters-error.log warn;
+
 http {
     default_type        application/octet-stream;
     sendfile            on;
 
+    access_log          /tmp/nginx-test-custom-counters-access.log;
+
+    counters_survive_reload on;
+
     server {
         listen          8010;
         server_name     main monitored;
-        error_log       /tmp/nginx-test-custom-counters-error.log warn;
-        access_log      /tmp/nginx-test-custom-counters-access.log;
 
         counter $cnt_all_requests inc;
 

@@ -59,7 +59,7 @@ Counters *may* survive after nginx configuration reload, provided directive
 Counters from a specific counter set *will not* survive if their number in the
 set has changed in the new configuration. Also avoid changing the order of
 counters declarations, otherwise survived counters will pick values of their
-mates that were standing on these position before reloading.
+mates that were standing on these positions before reloading.
 
 Example
 -------

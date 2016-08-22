@@ -248,3 +248,10 @@ By adding another line with *echo*
 into location */* in the second virtual server, the counter gets monitored just
 like other custom counters.
 
+See also
+--------
+
+[*Универсальные счетчики в nginx: замечания к реализации
+модуля*](http://lin-techdet.blogspot.ru/2016/08/nginx.html) (in Russian).
+Remarks on implementation of the module.
+

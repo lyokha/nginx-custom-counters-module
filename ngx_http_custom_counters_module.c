@@ -587,7 +587,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         return NGX_CONF_ERROR;
     }
     if ((ngx_array_t *) v->data == NULL) {
-        v_data = ngx_pnalloc(cf->pool, sizeof(ngx_array_t));
+        v_data = ngx_palloc(cf->pool, sizeof(ngx_array_t));
         if (v_data == NULL) {
             return NGX_CONF_ERROR;
         }

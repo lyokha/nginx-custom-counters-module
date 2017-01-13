@@ -364,7 +364,7 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
 {
-    ngx_atomic_uint_t   *shm_data = data;
+    ngx_atomic_uint_t   *shm_data, *oshm_data = data;
     ngx_http_cnt_set_t  *cnt_set = shm_zone->data;
 
     ngx_slab_pool_t     *shpool;
@@ -372,8 +372,8 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     size_t               size;
 
     nelts = cnt_set->vars.nelts;
-    if (shm_data != NULL && cnt_set->survive_reload) {
-        if (nelts == shm_data[0]) {
+    if (oshm_data != NULL && cnt_set->survive_reload) {
+        if (nelts == oshm_data[0]) {
             shm_zone->data = data;
             return NGX_OK;
         } else {
@@ -384,16 +384,35 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     }
 
     shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
+
+    if (shm_zone->shm.exists) {
+        shm_zone->data = shpool->data;
+        return NGX_OK;
+    }
+
     size = sizeof(ngx_atomic_uint_t) * (nelts + 1);
 
-    shm_data = ngx_slab_alloc(shpool, size);
+    ngx_shmtx_lock(&shpool->mutex);
+
+    shm_data = ngx_slab_alloc_locked(shpool, size);
     if (shm_data == NULL) {
+        ngx_shmtx_unlock(&shpool->mutex);
         return NGX_ERROR;
     }
+    ngx_memzero(shm_data, size);
     shm_data[0] = nelts;
 
     shpool->data = shm_data;
     shm_zone->data = shm_data;
+
+    /* FIXME: this is not always safe: too slow workers may write in recently
+     * allocated areas when nginx reloads its configuration too fast and having 
+     * been already freed areas get reused */
+    if (oshm_data != NULL) {
+        ngx_slab_free_locked(shpool, oshm_data);
+    }
+
+    ngx_shmtx_unlock(&shpool->mutex);
 
     return NGX_OK;
 }

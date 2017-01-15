@@ -371,39 +371,43 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     ngx_uint_t           nelts;
     size_t               size;
 
+    shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
     nelts = cnt_set->vars.nelts;
-    if (oshm_data != NULL && cnt_set->survive_reload) {
-        if (nelts == oshm_data[0]) {
-            shm_zone->data = data;
+    size = sizeof(ngx_atomic_uint_t) * (nelts + 1);
+
+    if (oshm_data != NULL) {
+        if (cnt_set->survive_reload) {
+            if (nelts == oshm_data[0]) {
+                shm_zone->data = data;
+                return NGX_OK;
+            } else {
+                ngx_log_error(NGX_LOG_WARN, shm_zone->shm.log, 0,
+                              "custom counters set \"%V\" cannot survive reload "
+                              "because its size has changed", &cnt_set->name);
+            }
+        } else if (nelts <= oshm_data[0]) {
+            ngx_shmtx_lock(&shpool->mutex);
+            ngx_memzero(oshm_data, size);
+            oshm_data[0] = nelts;
+            ngx_shmtx_unlock(&shpool->mutex);
+            shm_zone->data = oshm_data;
             return NGX_OK;
-        } else {
-            ngx_log_error(NGX_LOG_WARN, shm_zone->shm.log, 0,
-                          "custom counters set \"%V\" cannot survive reload "
-                          "because its size has changed", &cnt_set->name);
         }
     }
-
-    shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
 
     if (shm_zone->shm.exists) {
         shm_zone->data = shpool->data;
         return NGX_OK;
     }
 
-    size = sizeof(ngx_atomic_uint_t) * (nelts + 1);
-
     ngx_shmtx_lock(&shpool->mutex);
 
-    shm_data = ngx_slab_alloc_locked(shpool, size);
+    shm_data = ngx_slab_calloc_locked(shpool, size);
     if (shm_data == NULL) {
         ngx_shmtx_unlock(&shpool->mutex);
         return NGX_ERROR;
     }
-    ngx_memzero(shm_data, size);
     shm_data[0] = nelts;
-
-    shpool->data = shm_data;
-    shm_zone->data = shm_data;
 
     /* FIXME: this is not always safe: too slow workers may write in recently
      * allocated areas when nginx reloads its configuration too fast and having 
@@ -413,6 +417,9 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     }
 
     ngx_shmtx_unlock(&shpool->mutex);
+
+    shpool->data = shm_data;
+    shm_zone->data = shm_data;
 
     return NGX_OK;
 }

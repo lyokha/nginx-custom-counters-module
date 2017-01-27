@@ -465,6 +465,10 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
     shm_data = (ngx_atomic_t *) shm->data + 1;
     buf = ngx_pnalloc(r->pool, bufsz);
+    if (buf == NULL) {
+        return NGX_ERROR;
+    }
+
     last = ngx_snprintf(buf, bufsz, "%d", shm_data[idx]);
 
     v->len          = last - buf;

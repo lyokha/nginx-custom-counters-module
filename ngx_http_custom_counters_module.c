@@ -364,16 +364,16 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
 {
-    ngx_atomic_uint_t   *shm_data, *oshm_data = data;
+    ngx_atomic_int_t    *shm_data, *oshm_data = data;
     ngx_http_cnt_set_t  *cnt_set = shm_zone->data;
 
     ngx_slab_pool_t     *shpool;
-    ngx_uint_t           nelts;
+    ngx_int_t            nelts;
     size_t               size;
 
     shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
     nelts = cnt_set->vars.nelts;
-    size = sizeof(ngx_atomic_uint_t) * (nelts + 1);
+    size = sizeof(ngx_atomic_int_t) * (nelts + 1);
 
     if (oshm_data != NULL) {
         if (cnt_set->survive_reload) {
@@ -435,7 +435,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     ngx_http_cnt_srv_conf_t           *scf;
     ngx_shm_zone_t                    *shm;
     ngx_http_cnt_var_data_t           *var_data;
-    ngx_atomic_t                      *shm_data;
+    volatile ngx_atomic_int_t         *shm_data;
     ngx_int_t                          idx = NGX_ERROR;
     u_char                            *buf, *last;
     static const ngx_uint_t            bufsz = 32;
@@ -463,13 +463,13 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         return NGX_ERROR;
     }
 
-    shm_data = (ngx_atomic_t *) shm->data + 1;
+    shm_data = (volatile ngx_atomic_int_t *) shm->data + 1;
     buf = ngx_pnalloc(r->pool, bufsz);
     if (buf == NULL) {
         return NGX_ERROR;
     }
 
-    last = ngx_snprintf(buf, bufsz, "%d", shm_data[idx]);
+    last = ngx_snprintf(buf, bufsz, "%A", shm_data[idx]);
 
     v->len          = last - buf;
     v->data         = buf;
@@ -843,7 +843,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_http_cnt_loc_conf_t       *lcf;
     ngx_http_core_main_conf_t     *cmcf;
     ngx_http_cnt_data_t           *cnt_data;
-    ngx_atomic_t                  *shm_data, *dst;
+    volatile ngx_atomic_int_t     *shm_data, *dst;
     ngx_slab_pool_t               *shpool;
     ngx_http_cnt_rt_vars_data_t   *rt_vars;
     ngx_http_variable_value_t     *var;
@@ -856,7 +856,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     if (scf->cnt_set == NULL) {
         return NGX_DECLINED;
     }
-    shm_data = (ngx_atomic_t *) scf->cnt_set->zone->data + 1;
+    shm_data = (volatile ngx_atomic_int_t *) scf->cnt_set->zone->data + 1;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_custom_counters_module);
     cnt_data = lcf->cnt_data.elts;

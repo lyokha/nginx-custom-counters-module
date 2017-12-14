@@ -901,9 +901,10 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
             ngx_shmtx_lock(&shpool->mutex);
             *dst = value;
             ngx_shmtx_unlock(&shpool->mutex);
-
         } else if (cnt_data[i].op == ngx_http_cnt_op_inc) {
-            ngx_atomic_fetch_add(dst, value);
+            if (value != 0) {
+                (void) ngx_atomic_fetch_add(dst, value);
+            }
         }
     }
 

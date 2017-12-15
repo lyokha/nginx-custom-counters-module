@@ -7,11 +7,11 @@ and, optionally, by configured sets of virtual servers.
 Directives
 ----------
 
-Normal counters are updated on a later request's phase while filtering response
-headers. They can be declared on *server*, *location*, and *location-if* levels.
-Their cumulative values (except references to run-time variables) are merged
-through all the levels from the top to the bottom when nginx reads
-configuration.
+*Normal counters* are updated on a later request's phase while filtering
+response headers. They can be declared on *server*, *location*, and
+*location-if* levels. Their cumulative values (except for references to run-time
+variables) are merged through all the levels from the top to the bottom when
+nginx reads configuration.
 
 #### Normal counters synopsis
 
@@ -21,27 +21,78 @@ counter $cnt_name2 inc $inc_cnt_name2;
 ```
 
 Variables ``$cnt_name1`` and ``$cnt_name2`` can be accessed elsewhere in the
-configuration: they return values held in a shared memory and must be equal
-across all workers at the same moment of time. The second argument of the
-directive is an operation &mdash; *set* or *inc* (i.e. increment). The third
-argument &mdash; an integer (possibly negative) or a variable (possibly
-negated), is optional, its default value is *1*.
+configuration: they return values held in a shared memory and thus are equal
+across all workers at the same moment. The second argument of the directive is
+an operation &mdash; *set* or *inc* (i.e. increment). The third argument &mdash;
+an integer (possibly negative) or a variable (possibly negated), is optional,
+its default value is *1*.
 
-Early counters are updated before *rewrite* directives and can be used to mark
-entry points before any *rewrites* and *ifs*. They are allowed only on the
-*location* level. No counters are able to operate in the middle of sequential
-rewrites.
+*Early counters* are updated before *rewrite* directives and can be used to mark
+entry points before any *rewrites* and *ifs*. They are allowed only on
+*location* level.
 
 #### Early counters synopsis
 
 ```nginx
-early_counter $ecnt_name1 set 1;
-early_counter $ecnt_name2 inc $inc_cnt_name2;
+early_counter $cnt_name1 set 1;
+early_counter $cnt_name2 inc $inc_cnt_name2;
 ```
 
 Meaning of the arguments correspond to that of the normal counters. A single
 counter can be declared both as normal and early if none of the merged location
 configuration hierarchies contains both the types simultaneously.
+
+Early counters may update on every *rewrite* jump to another location. With the
+following configuration,
+
+```nginx
+user                    nobody;
+worker_processes        4;
+
+events {
+    worker_connections  1024;
+}
+
+error_log               /tmp/nginx-test-custom-counters-error.log warn;
+
+http {
+    default_type        application/octet-stream;
+    sendfile            on;
+
+    access_log          /tmp/nginx-test-custom-counters-access.log;
+
+    counters_survive_reload on;
+
+    server {
+        listen          8010;
+        server_name     main;
+
+        location / {
+            early_counter $cnt_1 inc;
+            rewrite ^ /2;
+        }
+
+        location /2 {
+            early_counter $cnt_1 inc;
+            early_counter $cnt_2 inc;
+            rewrite ^ /3;
+        }
+
+        location /3 {
+            echo "cnt_1 = $cnt_1 | cnt_2 = $cnt_2";
+        }
+    }
+}
+```
+
+all early counters will be printed expectedly.
+
+```ShellSession
+$ curl 'http://127.0.0.1:8010/'
+cnt_1 = 2 | cnt_2 = 1
+$ curl 'http://127.0.0.1:8010/'
+cnt_1 = 4 | cnt_2 = 2
+```
 
 Sharing between virtual servers
 -------------------------------
@@ -183,7 +234,7 @@ all = 5 | all?a = 9 | /test = 4 | /test?a = 9 | /test?b = 1 | /test/rewrite = 1
 Remarks on using location ifs and complex conditions
 ----------------------------------------------------
 
-Originally in nginx *location ifs* were designed for a very special task:
+Originally in nginx, *location ifs* were designed for a very special task:
 *replacing location configuration* when a given condition matches, not for
 *doing anything*. That's why using them for only checking a counter like when
 testing against ``$arg_a`` in location */test* is a bad idea in general. In

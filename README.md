@@ -38,7 +38,7 @@ early_counter $cnt_name1 set 1;
 early_counter $cnt_name2 inc $inc_cnt_name2;
 ```
 
-Meaning of the arguments correspond to that of the normal counters. A single
+Meaning of the arguments corresponds to that of the normal counters. A single
 counter can be declared both as normal and early if none of the merged location
 configuration hierarchies contains both the types simultaneously.
 

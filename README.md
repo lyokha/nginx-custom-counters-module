@@ -38,12 +38,13 @@ early_counter $cnt_name1 set 1;
 early_counter $cnt_name2 inc $inc_cnt_name2;
 ```
 
-Meaning of the arguments corresponds to that of the normal counters. A single
-counter can be declared both as normal and early if none of the merged location
-configuration hierarchies contains both the types simultaneously.
+Meaning of the arguments corresponds to that of the normal counters.
 
-Early counters may update on every *rewrite* jump to another location. With the
-following configuration,
+A single counter can be declared both as normal and early if none of the merged
+location configuration hierarchies contains both the types simultaneously.
+
+Early counters are capable to update on every *rewrite* jump to another
+location. With the following configuration,
 
 ```nginx
 user                    nobody;

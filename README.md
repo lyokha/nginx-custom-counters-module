@@ -40,9 +40,6 @@ early_counter $cnt_name2 inc $inc_cnt_name2;
 
 Meaning of the arguments corresponds to that of the normal counters.
 
-A single counter can be declared both as normal and early if none of the merged
-location configuration hierarchies contains both the types simultaneously.
-
 Early counters are capable to update on every *rewrite* jump to another
 location. With the following configuration,
 
@@ -94,6 +91,9 @@ cnt_1 = 2 | cnt_2 = 1
 $ curl 'http://127.0.0.1:8010/'
 cnt_1 = 4 | cnt_2 = 2
 ```
+
+A single counter can be declared both as normal and early if none of the merged
+location configuration hierarchies contains both the types simultaneously.
 
 Sharing between virtual servers
 -------------------------------

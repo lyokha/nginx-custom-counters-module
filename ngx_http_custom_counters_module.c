@@ -784,7 +784,7 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
         if (new_data->early != cnt_data->early) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "custom counter was set both normal and early "
-                               "in same scope");
+                               "in the same scope");
             return NGX_CONF_ERROR;
         }
         if (cnt_data->op == ngx_http_cnt_op_inc) {

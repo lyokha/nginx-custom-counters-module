@@ -145,7 +145,8 @@ http {
 
     server {
         listen          8010;
-        server_name     main monitored;
+        server_name     main;
+        counter_set_id  monitor;
 
         counter $cnt_all_requests inc;
 
@@ -187,7 +188,6 @@ http {
     server {
         listen          8020;
         server_name     monitor;
-        counter_set_id  monitored;
 
         allow 127.0.0.1;
         deny  all;

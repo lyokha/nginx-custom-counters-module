@@ -61,7 +61,7 @@ typedef struct
 
 typedef struct
 {
-    ngx_http_cnt_set_t        *cnt_set;
+    ngx_uint_t                 cnt_set;
     ngx_int_t                  self;
 } ngx_http_cnt_var_data_t;
 
@@ -72,7 +72,7 @@ typedef struct {
 
 
 typedef struct {
-    ngx_http_cnt_set_t        *cnt_set;
+    ngx_uint_t                 cnt_set;
     ngx_str_t                  cnt_set_id;
     ngx_flag_t                 survive_reload;
 } ngx_http_cnt_srv_conf_t;
@@ -81,6 +81,13 @@ typedef struct {
 typedef struct {
     ngx_array_t                cnt_data;
 } ngx_http_cnt_loc_conf_t;
+
+
+typedef struct
+{
+    ngx_array_t               *cnt_sets;
+    ngx_uint_t                 cnt_set;
+} ngx_http_cnt_shm_data_t;
 
 
 static ngx_int_t ngx_http_cnt_init(ngx_conf_t *cf);
@@ -195,7 +202,7 @@ ngx_http_cnt_init(ngx_conf_t *cf)
         scf = cscfp[i]->ctx->srv_conf[
                 ngx_http_custom_counters_module.ctx_index];
         cnt_set_id = scf->cnt_set_id;
-        if (scf->cnt_set != NULL
+        if (scf->cnt_set != NGX_CONF_UNSET_UINT
             || (cnt_set_id.len == 0 && cscfp[i]->server_names.nelts == 0))
         {
             continue;
@@ -210,7 +217,7 @@ ngx_http_cnt_init(ngx_conf_t *cf)
                 && ngx_strncmp(cnt_sets[j].name.data, cnt_set_id.data,
                                cnt_set_id.len) == 0)
             {
-                scf->cnt_set = &cnt_sets[j];
+                scf->cnt_set = j;
                 break;
             }
         }
@@ -264,6 +271,7 @@ ngx_http_cnt_create_srv_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    scf->cnt_set = NGX_CONF_UNSET_UINT;
     scf->survive_reload = NGX_CONF_UNSET;
 
     return scf;
@@ -293,14 +301,22 @@ ngx_http_cnt_create_loc_conf(ngx_conf_t *cf)
 static char *
 ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_cnt_srv_conf_t  *prev = parent;
-    ngx_http_cnt_srv_conf_t  *conf = child;
+    ngx_http_cnt_srv_conf_t   *prev = parent;
+    ngx_http_cnt_srv_conf_t   *conf = child;
 
+    ngx_http_cnt_main_conf_t  *mcf;
+    ngx_http_cnt_set_t        *cnt_sets;
+
+    ngx_conf_merge_uint_value(conf->cnt_set, prev->cnt_set,
+                              NGX_CONF_UNSET_UINT);
     ngx_conf_merge_str_value(conf->cnt_set_id, prev->cnt_set_id, "");
     ngx_conf_merge_value(conf->survive_reload, prev->survive_reload, 0);
 
-    if (conf->survive_reload && conf->cnt_set) {
-        conf->cnt_set->survive_reload = 1;
+    if (conf->survive_reload && conf->cnt_set != NGX_CONF_UNSET_UINT) {
+        mcf = ngx_http_conf_get_module_main_conf(cf,
+                                            ngx_http_custom_counters_module);
+        cnt_sets = mcf->cnt_sets.elts;
+        cnt_sets[conf->cnt_set].survive_reload = 1;
     }
 
     return NGX_CONF_OK;
@@ -367,12 +383,16 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
 {
-    ngx_atomic_int_t    *shm_data, *oshm_data = data;
-    ngx_http_cnt_set_t  *cnt_set = shm_zone->data;
+    ngx_atomic_int_t         *shm_data, *oshm_data = data;
+    ngx_http_cnt_shm_data_t  *bound_shm_data = shm_zone->data;
 
-    ngx_slab_pool_t     *shpool;
-    ngx_int_t            nelts;
-    size_t               size;
+    ngx_slab_pool_t          *shpool;
+    ngx_http_cnt_set_t       *cnt_sets, *cnt_set;
+    ngx_int_t                 nelts;
+    size_t                    size;
+
+    cnt_sets = bound_shm_data->cnt_sets->elts;
+    cnt_set = &cnt_sets[bound_shm_data->cnt_set];
 
     shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
     nelts = cnt_set->vars.nelts;
@@ -435,10 +455,12 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     ngx_array_t                       *v_data = (ngx_array_t *) data;
 
     ngx_uint_t                         i;
+    ngx_http_cnt_main_conf_t          *mcf;
     ngx_http_cnt_srv_conf_t           *scf;
     ngx_shm_zone_t                    *shm;
     ngx_http_cnt_var_data_t           *var_data;
     volatile ngx_atomic_int_t         *shm_data;
+    ngx_http_cnt_set_t                *cnt_sets, *cnt_set;
     ngx_int_t                          idx = NGX_ERROR;
     u_char                            *buf, *last;
     static const ngx_uint_t            bufsz = 32;
@@ -449,7 +471,16 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     var_data = v_data->elts;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
-    if (scf->cnt_set == NULL || ((shm = scf->cnt_set->zone) == NULL)) {
+    if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
+        return NGX_ERROR;
+    }
+
+    mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+    cnt_sets = mcf->cnt_sets.elts;
+    cnt_set = &cnt_sets[scf->cnt_set];
+
+    shm = cnt_set->zone;
+    if (shm == NULL) {
         return NGX_ERROR;
     }
 
@@ -503,6 +534,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     ngx_http_cnt_var_data_t       *var_data;
     ngx_array_t                   *v_data;
     ngx_http_cnt_rt_vars_data_t   *rt_var;
+    ngx_http_cnt_shm_data_t       *shm_data;
     ngx_int_t                      idx = NGX_ERROR, v_idx;
     ngx_int_t                      val = 1;
     ngx_uint_t                     negative = 0;
@@ -545,17 +577,17 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     value[1].data++;
 
     cnt_sets = mcf->cnt_sets.elts;
-    if (scf->cnt_set == NULL) {
+    if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
         for (i = 0; i < mcf->cnt_sets.nelts; i++) {
             if (cnt_sets[i].name.len == cnt_set_id.len
                 && ngx_strncmp(cnt_sets[i].name.data, cnt_set_id.data,
                                cnt_set_id.len) == 0)
             {
-                scf->cnt_set = &cnt_sets[i];
+                scf->cnt_set = i;
             }
         }
     }
-    if (scf->cnt_set == NULL) {
+    if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
         cnt_set = ngx_array_push(&mcf->cnt_sets);
         if (cnt_set == NULL) {
             return NGX_CONF_ERROR;
@@ -577,16 +609,25 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         if (cnt_set->zone == NULL) {
             return NGX_CONF_ERROR;
         }
-        cnt_set->zone->init = ngx_http_cnt_shm_init;
-        cnt_set->zone->data = cnt_set;
+
         if (ngx_array_init(&cnt_set->vars, cf->pool, 1,
                            sizeof(ngx_uint_t)) != NGX_OK)
         {
             return NGX_CONF_ERROR;
         }
-        cnt_set->survive_reload = 0;
 
-        scf->cnt_set = cnt_set;
+        shm_data = ngx_palloc(cf->pool, sizeof(ngx_http_cnt_shm_data_t));
+        if (shm_data == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        scf->cnt_set = mcf->cnt_sets.nelts - 1;
+        shm_data->cnt_sets = &mcf->cnt_sets;
+        shm_data->cnt_set = scf->cnt_set;
+
+        cnt_set->zone->init = ngx_http_cnt_shm_init;
+        cnt_set->zone->data = shm_data;
+        cnt_set->survive_reload = 0;
     }
 
     v = ngx_http_add_variable(cf, &value[1], NGX_HTTP_VAR_CHANGEABLE);
@@ -598,8 +639,10 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         return NGX_CONF_ERROR;
     }
 
-    vars = scf->cnt_set->vars.elts;
-    for (i = 0; i < scf->cnt_set->vars.nelts; i++)
+    cnt_sets = mcf->cnt_sets.elts;
+    cnt_set = &cnt_sets[scf->cnt_set];
+    vars = cnt_set->vars.elts;
+    for (i = 0; i < cnt_set->vars.nelts; i++)
     {
         if (vars[i] == (ngx_uint_t) v_idx) {
             idx = i;
@@ -607,7 +650,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         }
     }
     if (idx == NGX_ERROR) {
-        var = ngx_array_push(&scf->cnt_set->vars);
+        var = ngx_array_push(&cnt_set->vars);
         if (var == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -741,7 +784,7 @@ ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_cnt_srv_conf_t       *scf = conf;
     ngx_str_t                     *value = cf->args->elts;
 
-    if (scf->cnt_set != NULL) {
+    if (scf->cnt_set != NGX_CONF_UNSET_UINT) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "directive \"counter_set_id\" must precede "
                            "all server's custom counters declarations");
@@ -843,6 +886,7 @@ static ngx_int_t
 ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
 {
     ngx_uint_t                     i, j;
+    ngx_http_cnt_main_conf_t      *mcf;
     ngx_http_cnt_srv_conf_t       *scf;
     ngx_http_cnt_loc_conf_t       *lcf;
     ngx_http_core_main_conf_t     *cmcf;
@@ -851,16 +895,22 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_slab_pool_t               *shpool;
     ngx_http_cnt_rt_vars_data_t   *rt_vars;
     ngx_http_variable_value_t     *var;
+    ngx_http_cnt_set_t            *cnt_sets, *cnt_set;
     ngx_int_t                      value, val;
     ngx_str_t                      base_var;
     ngx_http_variable_t           *v;
     ngx_uint_t                     negative;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
-    if (scf->cnt_set == NULL) {
+    if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
         return NGX_DECLINED;
     }
-    shm_data = (volatile ngx_atomic_int_t *) scf->cnt_set->zone->data + 1;
+
+    mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+    cnt_sets = mcf->cnt_sets.elts;
+    cnt_set = &cnt_sets[scf->cnt_set];
+
+    shm_data = (volatile ngx_atomic_int_t *) cnt_set->zone->data + 1;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_custom_counters_module);
     cnt_data = lcf->cnt_data.elts;
@@ -901,7 +951,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
             value += rt_vars[j].negative ? -val : val;
         }
         if (cnt_data[i].op == ngx_http_cnt_op_set) {
-            shpool = (ngx_slab_pool_t *) scf->cnt_set->zone->shm.addr;
+            shpool = (ngx_slab_pool_t *) cnt_set->zone->shm.addr;
             ngx_shmtx_lock(&shpool->mutex);
             *dst = value;
             ngx_shmtx_unlock(&shpool->mutex);

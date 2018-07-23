@@ -104,12 +104,11 @@ static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
     ngx_http_cnt_data_t *cnt_data);
+static ngx_inline ngx_int_t ngx_http_cnt_phase_handler_impl(
+    ngx_http_request_t *r, ngx_uint_t early);
 static ngx_int_t ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r);
-static ngx_int_t ngx_http_cnt_response_header_filter(ngx_http_request_t *r);
+static ngx_int_t ngx_http_cnt_log_phase_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early);
-
-
-static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
 
 
 static ngx_command_t ngx_http_cnt_commands[] = {
@@ -224,8 +223,12 @@ ngx_http_cnt_init(ngx_conf_t *cf)
 
     *h = ngx_http_cnt_rewrite_phase_handler;
 
-    ngx_http_next_header_filter = ngx_http_top_header_filter;
-    ngx_http_top_header_filter  = ngx_http_cnt_response_header_filter;
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_LOG_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_cnt_log_phase_handler;
 
     return NGX_OK;
 }
@@ -809,29 +812,30 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
 }
 
 
-static ngx_int_t
-ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r)
+static ngx_inline ngx_int_t
+ngx_http_cnt_phase_handler_impl(ngx_http_request_t *r, ngx_uint_t early)
 {
     if (r != r->main) {
         return NGX_DECLINED;
     }
 
-    (void) ngx_http_cnt_update(r, 1);
+    (void) ngx_http_cnt_update(r, early);
 
     return NGX_DECLINED;
 }
 
 
 static ngx_int_t
-ngx_http_cnt_response_header_filter(ngx_http_request_t *r)
+ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r)
 {
-    if (r != r->main) {
-        return ngx_http_next_header_filter(r);
-    }
+    return ngx_http_cnt_phase_handler_impl(r, 1);
+}
 
-    (void) ngx_http_cnt_update(r, 0);
 
-    return ngx_http_next_header_filter(r);
+static ngx_int_t
+ngx_http_cnt_log_phase_handler(ngx_http_request_t *r)
+{
+    return ngx_http_cnt_phase_handler_impl(r, 0);
 }
 
 

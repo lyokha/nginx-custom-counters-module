@@ -4,14 +4,23 @@ Nginx Custom Counters module
 This Nginx module features customizable counters shared by all worker processes
 and, optionally, by configured sets of virtual servers.
 
+Table of contents
+-----------------
+
+- [Directives](#directives)
+- [Sharing between virtual servers](#sharing-between-virtual-servers)
+- [Reloading nginx configuration](#reloading-nginx-configuration)
+- [An example](#an-example)
+- [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
+- [See also](#see-also)
+
 Directives
 ----------
 
-*Normal counters* are updated on a later request's phase while filtering
-response headers. They can be declared on *server*, *location*, and
-*location-if* levels. Their cumulative values (except for references to run-time
-variables) are merged through all the levels from the top to the bottom when
-nginx reads configuration.
+*Normal counters* are updated on the latest request's *log phase*. They can be
+declared on *server*, *location*, and *location-if* levels. Their cumulative
+values (except for references to run-time variables) are merged through all the
+levels from the top to the bottom when nginx reads configuration.
 
 #### Normal counters synopsis
 
@@ -113,8 +122,8 @@ set has changed in the new configuration. Also avoid changing the order of
 counters declarations, otherwise survived counters will pick values of their
 mates that were standing on these positions before reloading.
 
-Example
--------
+An example
+----------
 
 ```nginx
 user                    nobody;
@@ -171,6 +180,8 @@ http {
             early_counter $ecnt_test_requests inc;
             rewrite ^ /test last;
         }
+
+        counter $cnt_test_bytes_sent inc $bytes_sent;
     }
 
     server {
@@ -190,6 +201,10 @@ http {
             echo    " | /test/rewrite = $ecnt_test_requests";
         }
 
+        location /bytes_sent {
+            echo "bytes_sent = $cnt_test_bytes_sent";
+        }
+
         location ~* ^/reset/a/(\d+)$ {
             set $set_a_requests $1;
             counter $cnt_a_requests set $set_a_requests;
@@ -200,8 +215,7 @@ http {
 }
 ```
 
-A session example (based on the configuration above)
-----------------------------------------------------
+Let's run some curl tests.
 
 ```ShellSession
 $ curl 'http://127.0.0.1:8020/'
@@ -230,6 +244,13 @@ all = 5 | all?a = 0 | /test = 4 | /test?a = 0 | /test?b = 1 | /test/rewrite = 1
 $ curl 'http://127.0.0.1:8020/reset/a/9'
 $ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 9 | /test = 4 | /test?a = 9 | /test?b = 1 | /test/rewrite = 1
+```
+
+Now let's see how many bytes were sent by nginx so far.
+
+```ShellSession
+$ curl 'http://127.0.0.1:8020/bytes_sent'
+bytes_sent = 949
 ```
 
 Remarks on using location ifs and complex conditions

@@ -201,15 +201,15 @@ http {
             echo    " | /test/rewrite = $ecnt_test_requests";
         }
 
-        location /bytes_sent {
-            echo "bytes_sent = $cnt_test_bytes_sent";
-        }
-
         location ~* ^/reset/a/(\d+)$ {
             set $set_a_requests $1;
             counter $cnt_a_requests set $set_a_requests;
             counter $cnt_test_a_requests set $set_a_requests;
             return 200;
+        }
+
+        location /bytes_sent {
+            echo "bytes_sent = $cnt_test_bytes_sent";
         }
     }
 }

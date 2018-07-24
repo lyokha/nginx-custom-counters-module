@@ -5,7 +5,7 @@
  *
  *    Description:  nginx module for shared custom counters
  *
- *        Version:  1.0
+ *        Version:  1.2
  *        Created:  04.08.2016 14:00:10
  *       Revision:  none
  *       Compiler:  gcc

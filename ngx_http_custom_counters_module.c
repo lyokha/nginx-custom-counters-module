@@ -405,8 +405,9 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
                 return NGX_OK;
             } else {
                 ngx_log_error(NGX_LOG_WARN, shm_zone->shm.log, 0,
-                              "custom counters set \"%V\" cannot survive reload "
-                              "because its size has changed", &cnt_set->name);
+                              "custom counters set \"%V\" cannot survive "
+                              "reload because its size has changed",
+                              &cnt_set->name);
             }
         } else if (nelts <= oshm_data[0]) {
             ngx_shmtx_lock(&shpool->mutex);
@@ -433,7 +434,7 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     shm_data[0] = nelts;
 
     /* FIXME: this is not always safe: too slow workers may write in recently
-     * allocated areas when nginx reloads its configuration too fast and having 
+     * allocated areas when nginx reloads its configuration too fast and having
      * been already freed areas get reused */
     if (oshm_data != NULL) {
         ngx_slab_free_locked(shpool, oshm_data);
@@ -484,8 +485,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         return NGX_ERROR;
     }
 
-    for (i = 0; i < v_data->nelts; i++)
-    {
+    for (i = 0; i < v_data->nelts; i++) {
         if (var_data[i].cnt_set != scf->cnt_set) {
             continue;
         }
@@ -556,8 +556,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         }
         cnt_set_id = ((ngx_http_server_name_t *) cscf->server_names.elts)[
                             cscf->server_names.nelts - 1].name;
-        if (cnt_set_id.len == 0)
-        {
+        if (cnt_set_id.len == 0) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "custom counters require directive "
                                "\"counter_set_id\" or non-empty last server "
@@ -642,8 +641,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     cnt_sets = mcf->cnt_sets.elts;
     cnt_set = &cnt_sets[scf->cnt_set];
     vars = cnt_set->vars.elts;
-    for (i = 0; i < cnt_set->vars.nelts; i++)
-    {
+    for (i = 0; i < cnt_set->vars.nelts; i++) {
         if (vars[i] == (ngx_uint_t) v_idx) {
             idx = i;
             break;

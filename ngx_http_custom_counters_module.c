@@ -66,6 +66,13 @@ typedef struct
 } ngx_http_cnt_var_data_t;
 
 
+typedef struct
+{
+    ngx_array_t               *cnt_sets;
+    ngx_uint_t                 cnt_set;
+} ngx_http_cnt_shm_data_t;
+
+
 typedef struct {
     ngx_array_t                cnt_sets;
 } ngx_http_cnt_main_conf_t;
@@ -81,13 +88,6 @@ typedef struct {
 typedef struct {
     ngx_array_t                cnt_data;
 } ngx_http_cnt_loc_conf_t;
-
-
-typedef struct
-{
-    ngx_array_t               *cnt_sets;
-    ngx_uint_t                 cnt_set;
-} ngx_http_cnt_shm_data_t;
 
 
 static ngx_int_t ngx_http_cnt_init(ngx_conf_t *cf);

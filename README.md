@@ -277,11 +277,11 @@ with
             counter $cnt_test_a_requests $inc_a_requests;
 ```
 
-However nginx *if* condition testing is not as powerful as it may require. If
-you need a full-fledged condition testing then consider binding increment or
-set variables to a full-featured programming language's handler. For example,
-let's increment a counter when a *base64*-encoded value contains a version tag.
-To make all required computations, let's use Haskell and [*Nginx Haskell
+However nginx *if* condition testing is not as powerful as it may be required.
+If you need a complex condition testing then consider binding increment or set
+variables to a full-featured programming language's handler. For example, let's
+increment a counter when a *base64*-encoded value contains a version tag. To
+make all required computations, let's use Haskell and [*Nginx Haskell
 module*](http://github.com/lyokha/nginx-haskell-module).
 
 Put directive *haskell compile* with a haskell function *hasVTag* on *http

@@ -182,7 +182,7 @@ http {
             rewrite ^ /test last;
         }
 
-        counter $cnt_test_bytes_sent inc $bytes_sent;
+        counter $cnt_bytes_sent inc $bytes_sent;
     }
 
     server {
@@ -209,7 +209,7 @@ http {
         }
 
         location /bytes_sent {
-            echo "bytes_sent = $cnt_test_bytes_sent";
+            echo "bytes_sent = $cnt_bytes_sent";
         }
     }
 }

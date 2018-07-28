@@ -29,7 +29,7 @@ counter $cnt_name1 set 1;
 counter $cnt_name2 inc $inc_cnt_name2;
 ```
 
-Variables ``$cnt_name1`` and ``$cnt_name2`` can be accessed elsewhere in the
+Variables `$cnt_name1` and `$cnt_name2` can be accessed elsewhere in the
 configuration: they return values held in a shared memory and thus are equal
 across all workers at the same moment. The second argument of the directive is
 an operation &mdash; *set* or *inc* (i.e. increment). The third argument &mdash;
@@ -109,14 +109,14 @@ Sharing between virtual servers
 
 Counters are shared between virtual servers if the latter have equal last
 *server names* that form an identifier for the counter set. The counter set
-identifier may also be declared explicitly using directive ``counter_set_id``
+identifier may also be declared explicitly using directive `counter_set_id`
 which must precede all server's counters declarations.
 
 Reloading nginx configuration
 -----------------------------
 
 Counters *may* survive after nginx configuration reload, provided directive
-``counters_survive_reload`` was set on *main* or *server* configuration levels.
+`counters_survive_reload` was set on *main* or *server* configuration levels.
 Counters from a specific counter set *will not* survive if their number in the
 set has changed in the new configuration. Also avoid changing the order of
 counters declarations, otherwise survived counters will pick values of their
@@ -146,7 +146,6 @@ http {
     server {
         listen          8010;
         server_name     main;
-        counter_set_id  monitor;
 
         counter $cnt_all_requests inc;
 
@@ -187,7 +186,8 @@ http {
 
     server {
         listen          8020;
-        server_name     monitor;
+        server_name     monitor.main;
+        counter_set_id  main;
 
         allow 127.0.0.1;
         deny  all;
@@ -259,9 +259,9 @@ Remarks on using location ifs and complex conditions
 Originally in nginx, *location ifs* were designed for a very special task:
 *replacing location configuration* when a given condition matches, not for
 *doing anything*. That's why using them for only checking a counter like when
-testing against ``$arg_a`` in location */test* is a bad idea in general. In
+testing against `$arg_a` in location */test* is a bad idea in general. In
 contrast, *server ifs* do not change location configurations and can be used for
-checking increment or set values like ``$inc_a_requests``. In our example we can
+checking increment or set values like `$inc_a_requests`. In our example we can
 simply replace *location if* test
 
 ```nginx

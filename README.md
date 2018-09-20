@@ -281,8 +281,8 @@ However *if* condition testing in Nginx is not as powerful as it may be
 required. If you need a complex condition testing then consider binding
 increment or set variables to a full-featured programming language's handler.
 For example, let's increment a counter when a *base64*-encoded value contains a
-version tag. To make all required computations, let's use Haskell and [*Nginx
-Haskell module*](http://github.com/lyokha/nginx-haskell-module).
+version tag like *v=1*. To make all required computations, let's use Haskell and
+[*Nginx Haskell module*](http://github.com/lyokha/nginx-haskell-module).
 
 Put directive *haskell compile* with a haskell function *hasVTag* on *http
 level*.
@@ -294,7 +294,7 @@ import Data.ByteString.Base64
 import Data.Maybe
 import Text.Regex.PCRE
 
-hasVTag = either (const False) (isJust . matchOnce r) . decode
+hasVTag = either (const False) (matchTest r) . decode
     where r = makeRegex "\\\\bv=\\\\d+\\\\b" :: Regex
 
 NGX_EXPORT_B_Y (hasVTag)
@@ -318,8 +318,18 @@ By adding another line with *echo*
             echo -n " | /test?misc:vtag = $cnt_test_cookie_misc_vtag";
 ```
 
-into location */* in the second virtual server, the counter gets monitored just
-like other custom counters.
+into location */* in the second virtual server, the counter gets monitored along
+with other custom counters.
+
+To test this, run
+
+```ShellSession
+$ curl -b 'Misc=bW9kZT10ZXN0LHY9Mg==' 'http://localhost:8010/test'
+```
+
+(value *bW9kZT10ZXN0LHY9Mg==* is base64-encoded string *mode=test,v=2*, try
+other variants with or without a version tag too), and watch the value of the
+counter *cnt_test_cookie_misc_vtag*.
 
 See also
 --------

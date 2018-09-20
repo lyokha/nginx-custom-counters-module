@@ -9,7 +9,7 @@ Table of contents
 
 - [Directives](#directives)
 - [Sharing between virtual servers](#sharing-between-virtual-servers)
-- [Reloading nginx configuration](#reloading-nginx-configuration)
+- [Reloading Nginx configuration](#reloading-nginx-configuration)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
 - [See also](#see-also)
@@ -20,7 +20,7 @@ Directives
 *Normal counters* are updated on the latest request's *log phase*. They can be
 declared on *server*, *location*, and *location-if* levels. Their cumulative
 values (except for references to run-time variables) are merged through all the
-levels from the top to the bottom when nginx reads configuration.
+levels from the top to the bottom when Nginx reads configuration.
 
 #### Normal counters synopsis
 
@@ -112,10 +112,10 @@ Counters are shared between virtual servers if the latter have equal last
 identifier may also be declared explicitly using directive `counter_set_id`
 which must precede all server's counters declarations.
 
-Reloading nginx configuration
+Reloading Nginx configuration
 -----------------------------
 
-Counters *may* survive after nginx configuration reload, provided directive
+Counters *may* survive after Nginx configuration reload, provided directive
 `counters_survive_reload` was set on *main* or *server* configuration levels.
 Counters from a specific counter set *will not* survive if their number in the
 set has changed in the new configuration. Also avoid changing the order of
@@ -246,7 +246,7 @@ $ curl 'http://127.0.0.1:8020/'
 all = 5 | all?a = 9 | /test = 4 | /test?a = 9 | /test?b = 1 | /test/rewrite = 1
 ```
 
-Now let's see how many bytes were sent by nginx so far.
+Now let's see how many bytes were sent by Nginx so far.
 
 ```ShellSession
 $ curl 'http://127.0.0.1:8020/bytes_sent'
@@ -256,7 +256,7 @@ bytes_sent = 949
 Remarks on using location ifs and complex conditions
 ----------------------------------------------------
 
-Originally in nginx, *location ifs* were designed for a very special task:
+Originally in Nginx, *location ifs* were designed for a very special task:
 *replacing location configuration* when a given condition matches, not for
 *doing anything*. That's why using them for only checking a counter like when
 testing against `$arg_a` in location */test* is a bad idea in general. In
@@ -277,12 +277,12 @@ with
             counter $cnt_test_a_requests $inc_a_requests;
 ```
 
-However nginx *if* condition testing is not as powerful as it may be required.
-If you need a complex condition testing then consider binding increment or set
-variables to a full-featured programming language's handler. For example, let's
-increment a counter when a *base64*-encoded value contains a version tag. To
-make all required computations, let's use Haskell and [*Nginx Haskell
-module*](http://github.com/lyokha/nginx-haskell-module).
+However *if* condition testing in Nginx is not as powerful as it may be
+required. If you need a complex condition testing then consider binding
+increment or set variables to a full-featured programming language's handler.
+For example, let's increment a counter when a *base64*-encoded value contains a
+version tag. To make all required computations, let's use Haskell and [*Nginx
+Haskell module*](http://github.com/lyokha/nginx-haskell-module).
 
 Put directive *haskell compile* with a haskell function *hasVTag* on *http
 level*.
@@ -302,7 +302,7 @@ NGX_EXPORT_B_Y (hasVTag)
     ';
 ```
 
-Then put next 2 lines into location */test*.
+Then put the next 2 lines into location */test*.
 
 ```nginx
             haskell_run hasVTag $hs_inc_cnt_vtag $cookie_misc;

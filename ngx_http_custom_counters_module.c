@@ -5,7 +5,7 @@
  *
  *    Description:  nginx module for shared custom counters
  *
- *        Version:  1.2
+ *        Version:  1.3
  *        Created:  04.08.2016 14:00:10
  *       Revision:  none
  *       Compiler:  gcc
@@ -121,7 +121,7 @@ static ngx_int_t ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early);
 static ngx_command_t ngx_http_cnt_commands[] = {
 
     { ngx_string("counter"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE123,
       ngx_http_cnt_counter,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -281,20 +281,7 @@ ngx_http_cnt_create_srv_conf(ngx_conf_t *cf)
 static void *
 ngx_http_cnt_create_loc_conf(ngx_conf_t *cf)
 {
-    ngx_http_cnt_loc_conf_t  *lcf;
-
-    lcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_cnt_loc_conf_t));
-    if (lcf == NULL) {
-        return NULL;
-    }
-
-    if (ngx_array_init(&lcf->cnt_data, cf->pool, 1,
-                       sizeof(ngx_http_cnt_data_t)) != NGX_OK)
-    {
-        return NULL;
-    }
-
-    return lcf;
+    return ngx_pcalloc(cf->pool, sizeof(ngx_http_cnt_loc_conf_t));
 }
 
 
@@ -334,7 +321,7 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_array_t                   child_data;
     ngx_http_cnt_rt_vars_data_t  *rt_var;
 
-    if (prev->cnt_data.nelts == 0 && conf->cnt_data.nelts == 0) {
+    if (prev->cnt_data.nelts == 0) {
         return NGX_CONF_OK;
     }
 
@@ -353,18 +340,20 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         }
         *cnt_data = prev_cnt_data[i];
         size = cnt_data->rt_vars.nelts;
-        if (ngx_array_init(&cnt_data->rt_vars, cf->pool, size,
-                           sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
-        for (j = 0; j < size; j++) {
-            rt_var = ngx_array_push(&cnt_data->rt_vars);
-            if (rt_var == NULL) {
+        if (size > 0) {
+            if (ngx_array_init(&cnt_data->rt_vars, cf->pool, size,
+                               sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
+            {
                 return NGX_CONF_ERROR;
             }
-            *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
-                                prev_cnt_data[i].rt_vars.elts)[j];
+            for (j = 0; j < size; j++) {
+                rt_var = ngx_array_push(&cnt_data->rt_vars);
+                if (rt_var == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+                *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
+                           prev_cnt_data[i].rt_vars.elts)[j];
+            }
         }
     }
 
@@ -536,8 +525,19 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     ngx_http_cnt_rt_vars_data_t   *rt_var;
     ngx_http_cnt_shm_data_t       *shm_data;
     ngx_int_t                      idx = NGX_ERROR, v_idx;
-    ngx_int_t                      val = 1;
+    ngx_http_cnt_op_e              op = ngx_http_cnt_op_inc;
+    ngx_int_t                      val;
     ngx_uint_t                     negative = 0;
+
+    if (lcf->cnt_data.nalloc == 0
+        && ngx_array_init(&lcf->cnt_data, cf->pool, 1,
+                          sizeof(ngx_http_cnt_data_t)) != NGX_OK)
+    {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "failed to allocate memory for custom counters in "
+                           "location configuration data");
+        return NGX_CONF_ERROR;
+    }
 
     mcf = ngx_http_conf_get_module_main_conf(cf,
                                              ngx_http_custom_counters_module);
@@ -704,11 +704,9 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         }
     }
 
-    if (ngx_array_init(&cnt_data.rt_vars, cf->pool, 1,
-                       sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
-    {
-        return NGX_CONF_ERROR;
-    }
+    val = cf->args->nelts == 2 ? 0 : 1;
+
+    ngx_memzero(&cnt_data.rt_vars, sizeof(ngx_array_t));
 
     if (cf->args->nelts == 4) {
         if (value[3].len > 1 && value[3].data[0] == '-') {
@@ -721,6 +719,11 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
             value[3].data++;
             val = ngx_http_get_variable_index(cf, &value[3]);
             if (val == NGX_ERROR) {
+                return NGX_CONF_ERROR;
+            }
+            if (ngx_array_init(&cnt_data.rt_vars, cf->pool, 1,
+                               sizeof(ngx_http_cnt_rt_vars_data_t)) != NGX_OK)
+            {
                 return NGX_CONF_ERROR;
             }
             rt_var = ngx_array_push(&cnt_data.rt_vars);
@@ -743,18 +746,21 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         }
     }
 
-    if (value[2].len == 3 && ngx_strncmp(value[2].data, "set", 3) == 0) {
-        cnt_data.op = ngx_http_cnt_op_set;
-    } else if (value[2].len == 3 && ngx_strncmp(value[2].data, "inc", 3) == 0) {
-        cnt_data.op = ngx_http_cnt_op_inc;
-    } else {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "unknown counter operation: \"%V\"", &value[2]);
-        return NGX_CONF_ERROR;
+    if (cf->args->nelts > 2) {
+        if (value[2].len == 3 && ngx_strncmp(value[2].data, "set", 3) == 0) {
+            op = ngx_http_cnt_op_set;
+        } else if (value[2].len != 3
+                   || ngx_strncmp(value[2].data, "inc", 3) != 0)
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "unknown counter operation: \"%V\"", &value[2]);
+            return NGX_CONF_ERROR;
+        }
     }
 
     cnt_data.self  = v_idx;
     cnt_data.idx   = idx;
+    cnt_data.op    = op;
     cnt_data.value = val;
     cnt_data.early = early;
 
@@ -806,7 +812,7 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
 {
     ngx_http_cnt_data_t               *data = dst->elts;
 
-    ngx_uint_t                         i;
+    ngx_uint_t                         i, size;
     ngx_http_cnt_data_t               *new_data;
     ngx_http_cnt_rt_vars_data_t       *rt_var;
     ngx_int_t                          idx = NGX_ERROR;
@@ -836,13 +842,23 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
                 new_data->op = ngx_http_cnt_op_set;
             }
             new_data->value += cnt_data->value;
-            for (i = 0; i < cnt_data->rt_vars.nelts; i++) {
-                rt_var = ngx_array_push(&new_data->rt_vars);
-                if (rt_var == NULL) {
+            size = cnt_data->rt_vars.nelts;
+            if (size > 0) {
+                if (new_data->rt_vars.nalloc == 0
+                    && ngx_array_init(&new_data->rt_vars, cf->pool, size,
+                                      sizeof(ngx_http_cnt_rt_vars_data_t))
+                       != NGX_OK)
+                {
                     return NGX_CONF_ERROR;
                 }
-                *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
-                                    cnt_data->rt_vars.elts)[i];
+                for (i = 0; i < size; i++) {
+                    rt_var = ngx_array_push(&new_data->rt_vars);
+                    if (rt_var == NULL) {
+                        return NGX_CONF_ERROR;
+                    }
+                    *rt_var = ((ngx_http_cnt_rt_vars_data_t *)
+                               cnt_data->rt_vars.elts)[i];
+                }
             }
         } else {
             *new_data = *cnt_data;

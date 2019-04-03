@@ -36,6 +36,17 @@ an operation &mdash; *set* or *inc* (i.e. increment). The third argument &mdash;
 an integer (possibly negative) or a variable (possibly negated), is optional,
 its default value is *1*.
 
+Starting from version *1.3* of the module, directive `counter` may declare
+*no-op* counters such as
+
+```nginx
+counter $cnt_name3;
+```
+
+This is the exact equivalent of directive `counter` with option `inc 0` which
+can be used to declare variable `$cnt_name3` as a counter with the appropriate
+variable handler while avoiding access to the shared memory in the run-time.
+
 *Early counters* are updated before *rewrite* directives and can be used to mark
 entry points before any *rewrites* and *ifs*. They are allowed only on
 *location* level.
@@ -102,7 +113,7 @@ cnt_1 = 4 | cnt_2 = 2
 ```
 
 A single counter can be declared both as normal and early if none of the merged
-location configuration hierarchies contains both the types simultaneously.
+location configuration hierarchies contains both types simultaneously.
 
 Sharing between virtual servers
 -------------------------------

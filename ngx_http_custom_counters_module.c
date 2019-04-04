@@ -732,6 +732,12 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
             }
             rt_var->self = val;
             rt_var->negative = negative;
+            /* FIXME: rt_var can be freed later in ngx_http_cnt_merge() after
+             * pushing its data into the corresponding lcf->cnt_data storage
+             * if the latter was already containing references to run-time
+             * variables, but it makes little sense because it's not possible
+             * in practice to write a configuration file with a scenario that
+             * would lead to huge memory losses */
             val = 0;
         } else {
             val = ngx_atoi(value[3].data, value[3].len);

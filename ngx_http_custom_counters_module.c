@@ -81,6 +81,7 @@ typedef struct {
 typedef struct {
     ngx_uint_t                 cnt_set;
     ngx_str_t                  cnt_set_id;
+    ngx_str_t                  unreachable_cnt_mark;
     ngx_flag_t                 survive_reload;
 } ngx_http_cnt_srv_conf_t;
 
@@ -143,6 +144,12 @@ static ngx_command_t ngx_http_cnt_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_cnt_srv_conf_t, survive_reload),
+      NULL },
+    { ngx_string("display_unreachable_counter_as"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_HTTP_SRV_CONF_OFFSET,
+      offsetof(ngx_http_cnt_srv_conf_t, unreachable_cnt_mark),
       NULL },
 
       ngx_null_command
@@ -297,6 +304,8 @@ ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_uint_value(conf->cnt_set, prev->cnt_set,
                               NGX_CONF_UNSET_UINT);
     ngx_conf_merge_str_value(conf->cnt_set_id, prev->cnt_set_id, "");
+    ngx_conf_merge_str_value(conf->unreachable_cnt_mark,
+                             prev->unreachable_cnt_mark, "");
     ngx_conf_merge_value(conf->survive_reload, prev->survive_reload, 0);
 
     if (conf->survive_reload && conf->cnt_set != NGX_CONF_UNSET_UINT) {
@@ -462,7 +471,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
-        return NGX_ERROR;
+        goto unreachable_cnt;
     }
 
     mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
@@ -483,7 +492,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         break;
     }
     if (idx == NGX_ERROR) {
-        return NGX_ERROR;
+        goto unreachable_cnt;
     }
 
     shm_data = (volatile ngx_atomic_int_t *) shm->data + 1;
@@ -496,6 +505,16 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
     v->len          = last - buf;
     v->data         = buf;
+    v->valid        = 1;
+    v->no_cacheable = 0;
+    v->not_found    = 0;
+
+    return NGX_OK;
+
+unreachable_cnt:
+
+    v->len          = scf->unreachable_cnt_mark.len;
+    v->data         = scf->unreachable_cnt_mark.data;
     v->valid        = 1;
     v->no_cacheable = 0;
     v->not_found    = 0;

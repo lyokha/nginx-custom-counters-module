@@ -123,6 +123,16 @@ Counters are shared between virtual servers if the latter have equal last
 identifier may also be declared explicitly using directive `counter_set_id`
 which must precede all server's counters declarations.
 
+When a counter is not mentioned within a virtual server being a member of some
+other counter set, it gets *unreachable* in this virtual server. Unreachable
+counters are displayed as empty strings, but this is configurable on *main* or
+*server* configuration levels via directive *display_unreachable_counter_as*,
+e.g.
+
+```nginx
+        display_unreachable_counter_as -;
+```
+
 Reloading Nginx configuration
 -----------------------------
 

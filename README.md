@@ -126,7 +126,7 @@ which must precede all server's counters declarations.
 When a counter is not mentioned within a virtual server being a member of some
 other counter set, it gets *unreachable* in this virtual server. Unreachable
 counters are displayed as empty strings, but this is configurable on *main* or
-*server* configuration levels via directive *display_unreachable_counter_as*,
+*server* configuration levels via directive `display_unreachable_counter_as`,
 e.g.
 
 ```nginx
@@ -305,7 +305,7 @@ For example, let's increment a counter when a *base64*-encoded value contains a
 version tag like *v=1*. To make all required computations, let's use Haskell and
 [*Nginx Haskell module*](http://github.com/lyokha/nginx-haskell-module).
 
-Put directive *haskell compile* with a haskell function *hasVTag* on *http
+Put directive `haskell compile` with a haskell function *hasVTag* on *http
 level*.
 
 ```nginx

@@ -18,9 +18,10 @@ Directives
 ----------
 
 *Normal counters* are updated on the latest request's *log phase*. They can be
-declared on *server*, *location*, and *location-if* levels. Their cumulative
-values (except for references to run-time variables) are merged through all the
-levels from the top to the bottom when Nginx reads configuration.
+declared on *server*, *location*, and *location-if* configuration levels. Their
+cumulative values (except for references to run-time variables) are merged
+through all the levels from the top to the bottom when Nginx reads
+configuration.
 
 #### Normal counters synopsis
 
@@ -49,7 +50,7 @@ variable handler while avoiding access to the shared memory in the run-time.
 
 *Early counters* are updated before *rewrite* directives and can be used to mark
 entry points before any *rewrites* and *ifs*. They are allowed only on
-*location* level.
+*location* configuration level.
 
 #### Early counters synopsis
 
@@ -305,8 +306,8 @@ For example, let's increment a counter when a *base64*-encoded value contains a
 version tag like *v=1*. To make all required computations, let's use Haskell and
 [*Nginx Haskell module*](http://github.com/lyokha/nginx-haskell-module).
 
-Put directive `haskell compile` with a haskell function *hasVTag* on *http
-level*.
+Put directive `haskell compile` with Haskell function *hasVTag* on *http*
+configuration level.
 
 ```nginx
     haskell compile standalone /tmp/ngx_haskell.hs '

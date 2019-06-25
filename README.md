@@ -357,6 +357,6 @@ See also
 --------
 
 [*Универсальные счетчики в nginx: замечания к реализации
-модуля*](http://lin-techdet.blogspot.ru/2016/08/nginx.html) (in Russian).
+модуля*](http://lin-techdet.blogspot.com/2016/08/nginx.html) (in Russian).
 Remarks on implementation of the module.
 

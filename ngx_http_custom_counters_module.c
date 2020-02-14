@@ -938,7 +938,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_int_t                      value, val;
     ngx_str_t                      base_var;
     ngx_http_variable_t           *v;
-    ngx_uint_t                     negative;
+    ngx_uint_t                     negative, invalid;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
@@ -961,9 +961,11 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
         dst = &shm_data[cnt_data[i].idx];
         rt_vars = cnt_data[i].rt_vars.elts;
         value = cnt_data[i].value;
+        invalid = 0;
         for (j = 0; j < cnt_data[i].rt_vars.nelts; j++) {
             var = ngx_http_get_indexed_variable(r, rt_vars[j].self);
             if (var == NULL || !var->valid || var->not_found) {
+                invalid = 1;
                 continue;
             }
             negative = 0;
@@ -982,12 +984,16 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
                               "[custom counters] variable \"%V\" has value "
                               "\"%v\" which is not a number",
                               &v[rt_vars[j].self].name, var);
+                invalid = 1;
                 continue;
             }
             if (negative) {
                 val = -val;
             }
             value += rt_vars[j].negative ? -val : val;
+        }
+        if (invalid) {
+            continue;
         }
         if (cnt_data[i].op == ngx_http_cnt_op_set) {
             shpool = (ngx_slab_pool_t *) cnt_set->zone->shm.addr;
@@ -996,6 +1002,10 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
             ngx_shmtx_unlock(&shpool->mutex);
         } else if (cnt_data[i].op == ngx_http_cnt_op_inc) {
             if (value != 0) {
+                /* FIXME: currently there is no protection against overflows
+                 * and underflows, e.g. value 9223372036854775807 on a 64-bit
+                 * architecture will become -9223372036854775808 rather than 0
+                 * after incrementing by one */
                 (void) ngx_atomic_fetch_add(dst, value);
             }
         }

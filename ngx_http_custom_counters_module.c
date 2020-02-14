@@ -462,7 +462,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     ngx_http_cnt_set_t                *cnt_sets, *cnt_set;
     ngx_int_t                          idx = NGX_ERROR;
     u_char                            *buf, *last;
-    static const ngx_uint_t            bufsz = 32;
+    static const ngx_uint_t            bufsz = NGX_ATOMIC_T_LEN;
 
     if (v_data == NULL) {
         return NGX_ERROR;

@@ -25,22 +25,19 @@ static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
     ngx_string("custom_counters_");
 
 
-typedef enum
-{
+typedef enum {
     ngx_http_cnt_op_set,
     ngx_http_cnt_op_inc
 } ngx_http_cnt_op_e;
 
 
-typedef struct
-{
+typedef struct {
     ngx_int_t                  self;
     ngx_uint_t                 negative;
 } ngx_http_cnt_rt_vars_data_t;
 
 
-typedef struct
-{
+typedef struct {
     ngx_http_cnt_op_e          op;
     ngx_int_t                  self;
     ngx_int_t                  idx;
@@ -50,8 +47,7 @@ typedef struct
 } ngx_http_cnt_data_t;
 
 
-typedef struct
-{
+typedef struct {
     ngx_str_t                  name;
     ngx_array_t                vars;
     ngx_shm_zone_t            *zone;
@@ -59,15 +55,13 @@ typedef struct
 } ngx_http_cnt_set_t;
 
 
-typedef struct
-{
+typedef struct {
     ngx_uint_t                 cnt_set;
     ngx_int_t                  self;
 } ngx_http_cnt_var_data_t;
 
 
-typedef struct
-{
+typedef struct {
     ngx_array_t               *cnt_sets;
     ngx_uint_t                 cnt_set;
 } ngx_http_cnt_shm_data_t;

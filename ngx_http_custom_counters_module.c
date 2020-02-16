@@ -16,7 +16,9 @@
  * =============================================================================
  */
 
-#include "ngx_http_custom_counters_module.h"
+#include <ngx_config.h>
+#include <ngx_core.h>
+#include <ngx_http.h>
 
 
 static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
@@ -69,11 +71,13 @@ typedef struct {
 typedef struct {
     ngx_array_t               *cnt_sets;
     ngx_uint_t                 cnt_set;
+    ngx_str_t                  persistent_storage;
 } ngx_http_cnt_shm_data_t;
 
 
 typedef struct {
     ngx_array_t                cnt_sets;
+    ngx_str_t                  persistent_storage;
     ngx_uint_t                 collection_buf_len;
 } ngx_http_cnt_main_conf_t;
 
@@ -105,7 +109,12 @@ static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
 static ngx_int_t ngx_http_cnt_get_collection(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+ngx_int_t ngx_http_cnt_build_collection(ngx_http_request_t *r,
+    ngx_cycle_t *cycle, ngx_str_t *collection);
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
+static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
+    ngx_str_t persistent_storage, ngx_array_t *vars,
+    ngx_atomic_int_t *shm_data);
 static char *ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf, ngx_uint_t early);
 static char *ngx_http_cnt_counter(ngx_conf_t *cf, ngx_command_t *cmd,
@@ -114,6 +123,8 @@ static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+static char * ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf);
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
     ngx_http_cnt_data_t *cnt_data);
 static ngx_inline ngx_int_t ngx_http_cnt_phase_handler_impl(
@@ -121,6 +132,7 @@ static ngx_inline ngx_int_t ngx_http_cnt_phase_handler_impl(
 static ngx_int_t ngx_http_cnt_rewrite_phase_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_cnt_log_phase_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early);
+static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 
 
 static ngx_command_t  ngx_http_cnt_commands[] = {
@@ -148,6 +160,12 @@ static ngx_command_t  ngx_http_cnt_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_cnt_srv_conf_t, survive_reload),
+      NULL },
+    { ngx_string("counters_persistent_storage"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_http_cnt_counters_persistent_storage,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      0,
       NULL },
     { ngx_string("display_unreachable_counter_as"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
@@ -195,7 +213,7 @@ ngx_module_t  ngx_http_custom_counters_module = {
     NULL,                                    /* init thread */
     NULL,                                    /* exit thread */
     NULL,                                    /* exit process */
-    NULL,                                    /* exit master */
+    ngx_http_cnt_exit_master,                /* exit master */
     NGX_MODULE_V1_PADDING
 };
 
@@ -465,10 +483,13 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     }
     shm_data[0] = nelts;
 
-    /* FIXME: this is not always safe: too slow workers may write in recently
-     * allocated areas when nginx reloads its configuration too fast and having
-     * been already freed areas get reused */
-    if (oshm_data != NULL) {
+    if (oshm_data == NULL) {
+        ngx_http_cnt_load_persistent_counters(shm_zone->shm.log,
+            bound_shm_data->persistent_storage, &cnt_set->vars, shm_data + 1);
+    } else {
+        /* FIXME: this is not always safe: too slow workers may write in
+         * recently allocated areas when nginx reloads its configuration too
+         * fast and having been already freed areas get reused */
         ngx_slab_free_locked(shpool, oshm_data);
     }
 
@@ -534,7 +555,7 @@ ngx_http_cnt_get_value(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         return NGX_ERROR;
     }
 
-    last = ngx_snprintf(buf, NGX_ATOMIC_T_LEN, "%A", shm_data[idx]);
+    last = ngx_sprintf(buf, "%A", shm_data[idx]);
 
     v->len          = last - buf;
     v->data         = buf;
@@ -560,7 +581,7 @@ static ngx_int_t
 ngx_http_cnt_get_collection(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data)
 {
-    ngx_str_t                          collection;
+    ngx_str_t  collection;
 
     if (ngx_http_cnt_build_collection(r, NULL, &collection) != NGX_OK) {
         return NGX_ERROR;
@@ -582,11 +603,13 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
 {
     ngx_uint_t                         i, j;
     ngx_http_cnt_main_conf_t          *mcf;
+    ngx_pool_t                        *pool;
     ngx_shm_zone_t                    *shm;
     volatile ngx_atomic_int_t         *shm_data;
     ngx_http_cnt_set_t                *cnt_sets;
     ngx_http_cnt_set_var_data_t       *vars;
     ngx_uint_t                         nelts, size;
+    ngx_uint_t                         n_cnt_sets = 0;
     u_char                            *buf, *last;
 
     collection->data = (u_char *) "{}";
@@ -598,8 +621,10 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
         }
         mcf = ngx_http_cycle_get_module_main_conf(cycle,
                                             ngx_http_custom_counters_module);
+        pool = cycle->pool;
     } else {
         mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+        pool = r->pool;
     }
 
     nelts = mcf->cnt_sets.nelts;
@@ -612,11 +637,7 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
         return NGX_ERROR;
     }
 
-    if (r == NULL) {
-        buf = ngx_alloc(size, cycle->log);
-    } else {
-        buf = ngx_pnalloc(r->pool, size);
-    }
+    buf = ngx_pnalloc(pool, size);
     if (buf == NULL) {
         return NGX_ERROR;
     }
@@ -625,6 +646,11 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
 
     cnt_sets = mcf->cnt_sets.elts;
     for (i = 0; i < nelts; i++) {
+        if (r == NULL && !cnt_sets[i].survive_reload) {
+            continue;
+        }
+
+        n_cnt_sets++;
         last = ngx_sprintf(last, "\"%V\":{", &cnt_sets[i].name);
         shm = cnt_sets[i].zone;
         shm_data = (volatile ngx_atomic_int_t *) shm->data + 1;
@@ -640,7 +666,7 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
 
         last = ngx_sprintf(last, "},");
     }
-    if (i > 0) {
+    if (i > 0 && n_cnt_sets > 0) {
         last--;
     }
 
@@ -672,6 +698,40 @@ ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf)
     }
 
     mcf->collection_buf_len = len;
+}
+
+
+static ngx_int_t
+ngx_http_cnt_load_persistent_counters(ngx_log_t *log,
+                                      ngx_str_t persistent_storage,
+                                      ngx_array_t *vars,
+                                      ngx_atomic_int_t *shm_data)
+{
+    ngx_file_t   file;
+
+    if (persistent_storage.len == 0) {
+        return NGX_OK;
+    }
+
+    ngx_memzero(&file, sizeof(ngx_file_t));
+
+    file.name = persistent_storage;
+    file.log = log;
+
+    file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
+
+    if (file.fd == NGX_INVALID_FILE) {
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
+                      ngx_open_file_n " \"%V\" failed", &file.name);
+        return NGX_ERROR;
+    }
+
+    if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
+                      ngx_close_file_n " \"%V\" failed", &file.name);
+    }
+
+    return NGX_OK;
 }
 
 
@@ -794,6 +854,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         scf->cnt_set = mcf->cnt_sets.nelts - 1;
         shm_data->cnt_sets = &mcf->cnt_sets;
         shm_data->cnt_set = scf->cnt_set;
+        shm_data->persistent_storage = mcf->persistent_storage;
 
         cnt_set->zone->init = ngx_http_cnt_shm_init;
         cnt_set->zone->data = shm_data;
@@ -986,6 +1047,40 @@ ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 static char *
+ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
+                                         void *conf)
+{
+    ngx_http_cnt_main_conf_t      *mcf = conf;
+    ngx_str_t                     *value = cf->args->elts;
+    ngx_uint_t                     len;
+
+    if (mcf->cnt_sets.nelts > 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "directive \"counters_persistent_sorage\" must "
+                           "precede all custom counters sets declarations");
+        return NGX_CONF_ERROR;
+    }
+    if (mcf->persistent_storage.len > 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "duplicate directive "
+                           "\"counters_persistent_sorage\"");
+        return NGX_CONF_ERROR;
+    }
+
+    len = value[1].len + 1;
+    mcf->persistent_storage.data = ngx_pnalloc(cf->pool, len);
+    if (mcf->persistent_storage.data == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    ngx_memcpy(mcf->persistent_storage.data, value[1].data, value[1].len);
+    mcf->persistent_storage.data[value[1].len] = '\0';
+    mcf->persistent_storage.len = len;
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
 ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
                    ngx_http_cnt_data_t *cnt_data)
 {
@@ -1166,5 +1261,48 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     }
 
     return NGX_OK;
+}
+
+
+static void
+ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
+{
+    ngx_http_cnt_main_conf_t      *mcf;
+    ngx_str_t                      collection;
+    ngx_file_t                     file;
+
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_custom_counters_module);
+
+    if (mcf->persistent_storage.len == 0) {
+        return;
+    }
+
+    ngx_memzero(&file, sizeof(ngx_file_t));
+
+    file.name = mcf->persistent_storage;
+    file.log = cycle->log;
+
+    file.fd = ngx_open_file(file.name.data, NGX_FILE_WRONLY,
+                            NGX_FILE_TRUNCATE, NGX_FILE_DEFAULT_ACCESS);
+
+    if (file.fd == NGX_INVALID_FILE) {
+        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                      ngx_open_file_n " \"%V\" failed", &file.name);
+        return;
+    }
+
+    ngx_http_cnt_build_collection(NULL, cycle, &collection);
+
+    if (ngx_write_file(&file, collection.data, collection.len, 0) == NGX_ERROR)
+    {
+        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                      ngx_write_fd_n " \"%V\" failed", &file.name);
+    }
+
+    if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
+        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                      ngx_close_file_n " \"%V\" failed", &file.name);
+    }
 }
 

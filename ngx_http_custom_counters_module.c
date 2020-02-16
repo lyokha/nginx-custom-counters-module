@@ -20,6 +20,11 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+#define STATIC_JSMN
+#include <jsmn.h>
+#endif
+
 
 static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
     ngx_string("custom_counters_");
@@ -71,13 +76,17 @@ typedef struct {
 typedef struct {
     ngx_array_t               *cnt_sets;
     ngx_uint_t                 cnt_set;
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_str_t                  persistent_storage;
+#endif
 } ngx_http_cnt_shm_data_t;
 
 
 typedef struct {
     ngx_array_t                cnt_sets;
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_str_t                  persistent_storage;
+#endif
     ngx_uint_t                 collection_buf_len;
 } ngx_http_cnt_main_conf_t;
 
@@ -112,9 +121,11 @@ static ngx_int_t ngx_http_cnt_get_collection(ngx_http_request_t *r,
 ngx_int_t ngx_http_cnt_build_collection(ngx_http_request_t *r,
     ngx_cycle_t *cycle, ngx_str_t *collection);
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
 static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
     ngx_str_t persistent_storage, ngx_array_t *vars,
     ngx_atomic_int_t *shm_data);
+#endif
 static char *ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf, ngx_uint_t early);
 static char *ngx_http_cnt_counter(ngx_conf_t *cf, ngx_command_t *cmd,
@@ -123,8 +134,10 @@ static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
 static char * ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
+#endif
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
     ngx_http_cnt_data_t *cnt_data);
 static ngx_inline ngx_int_t ngx_http_cnt_phase_handler_impl(
@@ -161,12 +174,14 @@ static ngx_command_t  ngx_http_cnt_commands[] = {
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_cnt_srv_conf_t, survive_reload),
       NULL },
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     { ngx_string("counters_persistent_storage"),
       NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
       ngx_http_cnt_counters_persistent_storage,
       NGX_HTTP_MAIN_CONF_OFFSET,
       0,
       NULL },
+#endif
     { ngx_string("display_unreachable_counter_as"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_str_slot,
@@ -484,8 +499,10 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
     shm_data[0] = nelts;
 
     if (oshm_data == NULL) {
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
         ngx_http_cnt_load_persistent_counters(shm_zone->shm.log,
             bound_shm_data->persistent_storage, &cnt_set->vars, shm_data + 1);
+#endif
     } else {
         /* FIXME: this is not always safe: too slow workers may write in
          * recently allocated areas when nginx reloads its configuration too
@@ -701,6 +718,8 @@ ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf)
 }
 
 
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+
 static ngx_int_t
 ngx_http_cnt_load_persistent_counters(ngx_log_t *log,
                                       ngx_str_t persistent_storage,
@@ -733,6 +752,8 @@ ngx_http_cnt_load_persistent_counters(ngx_log_t *log,
 
     return NGX_OK;
 }
+
+#endif
 
 
 static char *
@@ -854,7 +875,9 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         scf->cnt_set = mcf->cnt_sets.nelts - 1;
         shm_data->cnt_sets = &mcf->cnt_sets;
         shm_data->cnt_set = scf->cnt_set;
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
         shm_data->persistent_storage = mcf->persistent_storage;
+#endif
 
         cnt_set->zone->init = ngx_http_cnt_shm_init;
         cnt_set->zone->data = shm_data;
@@ -1046,6 +1069,8 @@ ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+
 static char *
 ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                                          void *conf)
@@ -1078,6 +1103,8 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
     return NGX_CONF_OK;
 }
+
+#endif
 
 
 static char *
@@ -1267,6 +1294,8 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
 static void
 ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
 {
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+
     ngx_http_cnt_main_conf_t      *mcf;
     ngx_str_t                      collection;
     ngx_file_t                     file;
@@ -1304,5 +1333,7 @@ ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
         ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
                       ngx_close_file_n " \"%V\" failed", &file.name);
     }
+
+#endif
 }
 

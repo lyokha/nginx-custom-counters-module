@@ -7,10 +7,14 @@ then
     ngx_module_type=HTTP
     ngx_module_name=$ngx_addon_name
     ngx_module_srcs="$NGX_HTTP_CUSTOM_COUNTERS_MODULE_SRCS"
+    ngx_module_incs="/usr/include/jsmn"
 
     . auto/module
 else
     HTTP_MODULES="$HTTP_MODULES $ngx_addon_name"
     NGX_ADDON_SRCS="$NGX_ADDON_SRCS $NGX_HTTP_CUSTOM_COUNTERS_MODULE_SRCS"
+    CFLAGS="$CFLAGS -I/usr/include/jsmn"
 fi
+
+CFLAGS="$CFLAGS -DNGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY"
 

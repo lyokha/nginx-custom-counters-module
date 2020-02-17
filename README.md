@@ -9,7 +9,9 @@ Table of contents
 
 - [Directives](#directives)
 - [Sharing between virtual servers](#sharing-between-virtual-servers)
+- [Collecting all counters in a JSON object](#collecting-all-counters-in-a-json-object)
 - [Reloading Nginx configuration](#reloading-nginx-configuration)
+- [Persistent counters](#persistent-counters)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
 - [See also](#see-also)
@@ -134,6 +136,13 @@ e.g.
         display_unreachable_counter_as -;
 ```
 
+Collecting all counters in a JSON object
+----------------------------------------
+
+Starting from version *1.5* of the module, a new predefined variable
+`$cnt_collection` can be used to collect values of all counters from all counter
+sets and display them as a JSON object.
+
 Reloading Nginx configuration
 -----------------------------
 
@@ -143,6 +152,34 @@ Counters from a specific counter set *will not* survive if their number in the
 set has changed in the new configuration. Also avoid changing the order of
 counters declarations, otherwise survived counters will pick values of their
 mates that were standing on these positions before reloading.
+
+Persistent counters
+-------------------
+
+Counters that survive reload may also be saved and loaded back when Nginx exits
+and starts respectively. To enjoy this feature, you need to add on *http*
+configuration level lines
+
+```nginx
+    counters_survive_reload on;
+    counters_persistent_storage /var/lib/nginx/counters.json;
+```
+
+The first directive can be moved inside *server* levels of the configuration
+where counters persistency is really wanted. Path */var/lib/nginx/counters.json*
+denotes location where counters will be saved.
+
+Persistent counters require [*JSMN*](https://github.com/zserge/jsmn) library,
+which is header-only. It means that for building persistent counters, you need
+to put file *jsmn.h* in the source directory of this module or in a standard
+system include path such as */usr/include*. If you want to disable building
+persistent counters completely, remove line
+
+```
+CFLAGS="$CFLAGS -DNGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY"
+```
+
+in file *config*.
 
 An example
 ----------
@@ -233,6 +270,23 @@ http {
         location /bytes_sent {
             echo "bytes_sent = $cnt_bytes_sent";
         }
+
+        location /all {
+            echo $cnt_collection;
+        }
+    }
+
+    server {
+        listen          8030;
+        server_name     other;
+
+        counter $cnt_test1_requests inc;
+
+        display_unreachable_counter_as -;
+
+        location / {
+            echo "all = $cnt_all_requests";
+        }
     }
 }
 ```
@@ -273,6 +327,30 @@ Now let's see how many bytes were sent by Nginx so far.
 ```ShellSession
 $ curl 'http://127.0.0.1:8020/bytes_sent'
 bytes_sent = 949
+```
+
+And finally, let's see all counters at once.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8020/all' | jq
+{
+  "main": {
+    "cnt_all_requests": 5,
+    "cnt_a_requests": 9,
+    "cnt_test1_requests": 5,
+    "cnt_test2_requests": 5,
+    "cnt_test3_requests": 5,
+    "cnt_test_requests": 4,
+    "cnt_test_a_requests": 9,
+    "cnt_test_b_requests": 1,
+    "ecnt_test_requests": 1,
+    "cnt_test0_requests": 1,
+    "cnt_bytes_sent": 949
+  },
+  "other": {
+    "cnt_test1_requests": 0
+  }
+}
 ```
 
 Remarks on using location ifs and complex conditions

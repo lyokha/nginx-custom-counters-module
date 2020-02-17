@@ -1265,6 +1265,12 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         return NGX_CONF_ERROR;
     }
 
+    if (value[1].len == 0 || value[1].data[value[1].len - 1] == '/') {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "bad file name \"%V\"",
+                           &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
     len = value[1].len + 1;
     mcf->persistent_storage.data = ngx_pnalloc(cf->pool, len);
     if (mcf->persistent_storage.data == NULL) {
@@ -1284,9 +1290,52 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
 
     if (file.fd == NGX_INVALID_FILE) {
-        ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
-                           ngx_open_file_n " \"%V\" failed, proceeding anyway",
-                           &file.name);
+        ngx_err_t   err = ngx_errno;
+        ngx_dir_t   dir;
+        ngx_str_t   dir_name;
+        u_char     *slash = NULL, *p = file.name.data;
+
+        do {
+            p = ngx_strlchr(p, file.name.data + file.name.len, '/');
+            if (p != NULL) {
+                slash = p++;
+            }
+        } while (p != NULL);
+
+        if (slash == NULL) {
+            dir_name.data = (u_char *) "./";
+            dir_name.len = 2;
+        } else {
+            dir_name.len = slash + 1 - file.name.data;
+            dir_name.data = ngx_pnalloc(cf->pool, dir_name.len + 1);
+            if (dir_name.data == NULL) {
+                ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                "failed to allocate memory to parse JSON data");
+                return NGX_CONF_ERROR;
+            }
+            ngx_memcpy(dir_name.data, file.name.data, dir_name.len);
+            dir_name.data[dir_name.len] = '\0';
+        }
+
+        if (err != ENOENT) {
+            ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                               ngx_open_file_n " \"%V\" failed", &file.name);
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_open_dir(&dir_name, &dir) == NGX_ERROR) {
+            ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                               ngx_open_file_n " \"%V\" failed", &file.name);
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_close_dir(&dir) == NGX_ERROR) {
+            ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                               ngx_close_dir_n " \"%V\" failed", &dir_name);
+        }
+
+        /* the file does not exist yet */
+
         return NGX_CONF_OK;
     }
 
@@ -1322,7 +1371,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                            ngx_read_file_n " \"%V\" returned only %z bytes "
                            "instead of %z", &file.name, n, file_size);
-        return NGX_CONF_OK;
+        return NGX_CONF_ERROR;
     }
 
     jsmn_init(&jparse);
@@ -1330,7 +1379,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     jrc = jsmn_parse(&jparse, (char *) buf, file_size, NULL, 0);
     if (jrc < 0) {
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "JSON parse error: %d", jrc);
-        return NGX_CONF_OK;
+        return NGX_CONF_ERROR;
     }
 
     jsz = jrc;
@@ -1338,7 +1387,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     if (jtok == NULL) {
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                            "failed to allocate memory to parse JSON data");
-        return NGX_CONF_OK;
+        return NGX_CONF_ERROR;
     }
 
     jsmn_init(&jparse);
@@ -1346,7 +1395,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
     if (jrc < 0|| jtok[0].type != JSMN_OBJECT) {
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "JSON parse error: %d", jrc);
-        return NGX_CONF_OK;
+        return NGX_CONF_ERROR;
     }
 
     mcf->persistent_collection.len = file_size;
@@ -1363,7 +1412,7 @@ cleanup:
                            ngx_close_file_n " \"%V\" failed", &file.name);
     }
 
-    return NGX_CONF_OK;
+    return NGX_CONF_ERROR;
 }
 
 

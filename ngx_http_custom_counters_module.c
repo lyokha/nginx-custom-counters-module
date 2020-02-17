@@ -89,9 +89,12 @@ typedef struct {
     ngx_uint_t                 collection_buf_len;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_str_t                  persistent_storage;
+    ngx_str_t                  persistent_storage_backup;
     ngx_str_t                  persistent_collection;
     jsmntok_t                 *persistent_collection_tok;
     int                        persistent_collection_size;
+    time_t                     persistent_collection_check;
+    time_t                     persistent_collection_last_check;
 #endif
 } ngx_http_cnt_main_conf_t;
 
@@ -148,6 +151,8 @@ static char * ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
 static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
     ngx_str_t collection, jsmntok_t *collection_tok, int collection_size,
     ngx_str_t cnt_set, ngx_array_t *vars, ngx_atomic_int_t *shm_data);
+static ngx_int_t ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
+    ngx_cycle_t *cycle, ngx_uint_t backup);
 static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 #endif
 
@@ -180,7 +185,7 @@ static ngx_command_t  ngx_http_cnt_commands[] = {
       NULL },
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     { ngx_string("counters_persistent_storage"),
-      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE12,
       ngx_http_cnt_counters_persistent_storage,
       NGX_HTTP_MAIN_CONF_OFFSET,
       0,
@@ -1158,6 +1163,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_str_t                      base_var;
     ngx_http_variable_t           *v;
     ngx_uint_t                     negative, invalid;
+    time_t                         now;
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
@@ -1165,6 +1171,7 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     }
 
     mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+
     cnt_sets = mcf->cnt_sets.elts;
     cnt_set = &cnt_sets[scf->cnt_set];
 
@@ -1230,6 +1237,21 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
         }
     }
 
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+    now = ngx_time();
+
+    if (mcf->persistent_collection_check > 0
+        && difftime(now, mcf->persistent_collection_last_check)
+            > mcf->persistent_collection_check)
+    {
+        if (ngx_http_cnt_write_persistent_counters(r, NULL, 1) != NGX_OK) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "failed to save persistent counters backup");
+        }
+        mcf->persistent_collection_last_check = now;
+    }
+#endif
+
     return NGX_OK;
 }
 
@@ -1276,6 +1298,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     if (mcf->persistent_storage.data == NULL) {
         return NGX_CONF_ERROR;
     }
+
     ngx_memcpy(mcf->persistent_storage.data, value[1].data, value[1].len);
     mcf->persistent_storage.data[value[1].len] = '\0';
     mcf->persistent_storage.len = value[1].len;
@@ -1336,7 +1359,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
         /* the file does not exist yet */
 
-        return NGX_CONF_OK;
+        goto backup;
     }
 
     if (ngx_fd_info(file.fd, &file_info) == NGX_FILE_ERROR) {
@@ -1402,6 +1425,30 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     mcf->persistent_collection.data = buf;
     mcf->persistent_collection_tok = jtok;
     mcf->persistent_collection_size = jsz;
+
+backup:
+
+    if (cf->args->nelts > 2) {
+        mcf->persistent_collection_check = ngx_parse_time(&value[2], 1);
+
+        if (mcf->persistent_collection_check == NGX_ERROR) {
+            ngx_conf_log_error( NGX_LOG_ERR, cf, 0,
+                                "bad check interval \"%V\"", &value[2]);
+            return NGX_CONF_ERROR;
+        }
+
+        len = value[1].len + 2;
+        mcf->persistent_storage_backup.data = ngx_pnalloc(cf->pool, len);
+        if (mcf->persistent_storage_backup.data == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        ngx_memcpy(mcf->persistent_storage_backup.data, value[1].data,
+                   value[1].len);
+        mcf->persistent_storage_backup.data[value[1].len] = '~';
+        mcf->persistent_storage_backup.data[value[1].len + 1] = '\0';
+        mcf->persistent_storage_backup.len = value[1].len + 1;
+    }
 
     return NGX_CONF_OK;
 
@@ -1515,46 +1562,71 @@ ngx_http_cnt_load_persistent_counters(ngx_log_t *log, ngx_str_t collection,
 }
 
 
-static void
-ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
+static ngx_int_t
+ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
+                                       ngx_cycle_t *cycle, ngx_uint_t backup)
 {
     ngx_http_cnt_main_conf_t      *mcf;
+    ngx_log_t                     *log;
     ngx_str_t                      collection;
     ngx_file_t                     file;
 
-    mcf = ngx_http_cycle_get_module_main_conf(cycle,
-                                              ngx_http_custom_counters_module);
+    if (r == NULL) {
+        if (cycle == NULL) {
+            return NGX_ERROR;
+        }
+        mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                            ngx_http_custom_counters_module);
+        log = cycle->log;
+    } else {
+        mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+        log = r->connection->log;
+    }
 
     if (mcf->persistent_storage.len == 0) {
-        return;
+        return NGX_OK;
     }
 
     ngx_memzero(&file, sizeof(ngx_file_t));
 
-    file.name = mcf->persistent_storage;
-    file.log = cycle->log;
+    if (backup) {
+        file.name = mcf->persistent_storage_backup;
+    } else {
+        file.name = mcf->persistent_storage;
+    }
+    file.log = log;
 
     file.fd = ngx_open_file(file.name.data, NGX_FILE_WRONLY,
                             NGX_FILE_TRUNCATE, NGX_FILE_DEFAULT_ACCESS);
 
     if (file.fd == NGX_INVALID_FILE) {
-        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
                       ngx_open_file_n " \"%V\" failed", &file.name);
-        return;
+        return NGX_ERROR;
     }
 
-    ngx_http_cnt_build_collection(NULL, cycle, &collection);
+    ngx_http_cnt_build_collection(r, cycle, &collection);
 
     if (ngx_write_file(&file, collection.data, collection.len, 0) == NGX_ERROR)
     {
-        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
                       ngx_write_fd_n " \"%V\" failed", &file.name);
     }
 
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
-        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
                       ngx_close_file_n " \"%V\" failed", &file.name);
+        return NGX_ERROR;
     }
+
+    return NGX_OK;
+}
+
+
+static void
+ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
+{
+    (void) ngx_http_cnt_write_persistent_counters(NULL, cycle, 0);
 }
 
 #endif

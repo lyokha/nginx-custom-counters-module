@@ -5,7 +5,7 @@
  *
  *    Description:  nginx module for shared custom counters
  *
- *        Version:  1.3
+ *        Version:  1.5
  *        Created:  04.08.2016 14:00:10
  *       Revision:  none
  *       Compiler:  gcc
@@ -77,7 +77,8 @@ typedef struct {
     ngx_array_t               *cnt_sets;
     ngx_uint_t                 cnt_set;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-    jsmntok_t                 *persistent_collection;
+    ngx_str_t                  persistent_collection;
+    jsmntok_t                 *persistent_collection_tok;
     int                        persistent_collection_size;
 #endif
 } ngx_http_cnt_shm_data_t;
@@ -88,7 +89,8 @@ typedef struct {
     ngx_uint_t                 collection_buf_len;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_str_t                  persistent_storage;
-    jsmntok_t                 *persistent_collection;
+    ngx_str_t                  persistent_collection;
+    jsmntok_t                 *persistent_collection_tok;
     int                        persistent_collection_size;
 #endif
 } ngx_http_cnt_main_conf_t;
@@ -144,8 +146,8 @@ static ngx_int_t ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early);
 static char * ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
-    jsmntok_t *persistent_collection, int persistent_collection_size,
-    ngx_array_t *vars, ngx_atomic_int_t *shm_data);
+    ngx_str_t collection, jsmntok_t *collection_tok, int collection_size,
+    ngx_str_t cnt_set, ngx_array_t *vars, ngx_atomic_int_t *shm_data);
 static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 #endif
 
@@ -506,10 +508,17 @@ ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data)
 
     if (oshm_data == NULL) {
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-        ngx_http_cnt_load_persistent_counters(shm_zone->shm.log,
+        if (ngx_http_cnt_load_persistent_counters(shm_zone->shm.log,
                                     bound_shm_data->persistent_collection,
+                                    bound_shm_data->persistent_collection_tok,
                                     bound_shm_data->persistent_collection_size,
-                                    &cnt_set->vars, shm_data + 1);
+                                    cnt_set->name, &cnt_set->vars,
+                                    shm_data + 1) != NGX_OK)
+        {
+            ngx_log_error(NGX_LOG_ERR, shm_zone->shm.log, 0,
+                          "failed to load persistent counters collection, "
+                          "proceeding anyway");
+        }
 #endif
     } else {
         /* FIXME: this is not always safe: too slow workers may write in
@@ -847,6 +856,7 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
         shm_data->cnt_set = scf->cnt_set;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
         shm_data->persistent_collection = mcf->persistent_collection;
+        shm_data->persistent_collection_tok = mcf->persistent_collection_tok;
         shm_data->persistent_collection_size = mcf->persistent_collection_size;
 #endif
 
@@ -1275,7 +1285,8 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
     if (file.fd == NGX_INVALID_FILE) {
         ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
-                           ngx_open_file_n " \"%V\" failed", &file.name);
+                           ngx_open_file_n " \"%V\" failed, proceeding anyway",
+                           &file.name);
         return NGX_CONF_OK;
     }
 
@@ -1338,7 +1349,9 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         return NGX_CONF_OK;
     }
 
-    mcf->persistent_collection = jtok;
+    mcf->persistent_collection.len = file_size;
+    mcf->persistent_collection.data = buf;
+    mcf->persistent_collection_tok = jtok;
     mcf->persistent_collection_size = jsz;
 
     return NGX_CONF_OK;
@@ -1355,12 +1368,100 @@ cleanup:
 
 
 static ngx_int_t
-ngx_http_cnt_load_persistent_counters(ngx_log_t *log,
-                                      jsmntok_t *persistent_collection,
-                                      int persistent_collection_size,
+ngx_http_cnt_load_persistent_counters(ngx_log_t *log, ngx_str_t collection,
+                                      jsmntok_t *collection_tok,
+                                      int collection_size, ngx_str_t cnt_set,
                                       ngx_array_t *vars,
                                       ngx_atomic_int_t *shm_data)
 {
+    ngx_int_t                      i, j, k;
+    ngx_http_cnt_set_var_data_t   *elts;
+    ngx_int_t                      nelts;
+    ngx_int_t                      idx, val;
+    ngx_str_t                      tok;
+    ngx_uint_t                     skip;
+
+    nelts = vars->nelts;
+    if (nelts == 0) {
+        return NGX_OK;
+    }
+
+    elts = vars->elts;
+
+    for (i = 1 ;i < collection_size; i++) {
+        if (collection_tok[i].type != JSMN_STRING) {
+            ngx_log_error(NGX_LOG_ERR, log, 0,
+                          "unexpected structure of JSON data: "
+                          "key is not a string");
+            return NGX_ERROR;
+        }
+
+        skip = 0;
+        tok.len = collection_tok[i].end - collection_tok[i].start;
+        tok.data = &collection.data[collection_tok[i].start];
+
+        i++;
+
+        if (tok.len != cnt_set.len
+            || ngx_strncmp(tok.data, cnt_set.data, tok.len) != 0)
+        {
+            skip = 1;
+        }
+
+        if (i >= collection_size || collection_tok[i].type != JSMN_OBJECT) {
+            ngx_log_error(NGX_LOG_ERR, log, 0,
+                          "unexpected structure of JSON data: "
+                          "value is not an object");
+            return NGX_ERROR;
+        }
+
+        if (skip) {
+            i += 2 * collection_tok[i].size;
+            continue;
+        }
+
+        for (j = 0; j < collection_tok[i].size; j++) {
+            idx = i + 1 + j * 2;
+
+            if (collection_tok[idx].type != JSMN_STRING
+                && collection_tok[idx + 1].type != JSMN_PRIMITIVE)
+            {
+                ngx_log_error(NGX_LOG_ERR, log, 0,
+                              "unexpected structure of JSON data: "
+                              "value is not a string / primitive pair");
+                return NGX_ERROR;
+            }
+
+            tok.len = collection_tok[idx].end - collection_tok[idx].start;
+            tok.data = &collection.data[collection_tok[idx].start];
+            for (k = 0; k < nelts; k++) {
+                if (elts[k].name.len == tok.len
+                    && ngx_strncmp(elts[k].name.data, tok.data,
+                                   tok.len) == 0)
+                {
+                    tok.len =
+                            collection_tok[idx + 1].end -
+                            collection_tok[idx + 1].start;
+                    tok.data =
+                            &collection.data[collection_tok[idx + 1].start];
+
+                    val = ngx_atoi(tok.data, tok.len);
+                    if (val == NGX_ERROR) {
+                        ngx_log_error(NGX_LOG_ERR, log, 0,
+                                      "not a number \"%V\"", &tok);
+                        return NGX_ERROR;
+                    }
+
+                    shm_data[elts[k].idx] = val;
+
+                    break;
+                }
+            }
+        }
+
+        i += j * 2;
+    }
+
     return NGX_OK;
 }
 

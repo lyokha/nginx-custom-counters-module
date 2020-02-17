@@ -169,11 +169,11 @@ The first directive can be moved inside *server* levels of the configuration
 where counters persistency is really wanted. Path */var/lib/nginx/counters.json*
 denotes location where counters will be saved.
 
-Persistent counters require [*JSMN*](https://github.com/zserge/jsmn) library,
-which is header-only. It means that for building persistent counters, you need
-to put file *jsmn.h* in the source directory of this module or in a standard
-system include path such as */usr/include*. If you want to disable building
-persistent counters completely, remove line
+Persistent counters require library [*JSMN*](https://github.com/zserge/jsmn),
+which is header-only. It means that for building them, you need to put file
+*jsmn.h* in the source directory of this module or in a standard system include
+path such as */usr/include*. If you want to disable building persistent counters
+completely, remove line
 
 ```
 CFLAGS="$CFLAGS -DNGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY"

@@ -1272,11 +1272,11 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     ngx_file_info_t                file_info, file_info_backup;
     size_t                         file_size;
     ngx_copy_file_t                copy_file;
-    u_char                        *buf;
+    u_char                        *buf = NULL;
     ssize_t                        n;
     ngx_uint_t                     len;
     jsmn_parser                    jparse;
-    jsmntok_t                     *jtok;
+    jsmntok_t                     *jtok = NULL;
     int                            jrc, jsz;
     ngx_uint_t                     not_found = 0, backup_not_found = 0;
     ngx_uint_t                     copy_backup_file = 0;
@@ -1478,7 +1478,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
                 file_size = (size_t) ngx_file_size(&file_info_backup);
 
-                buf = ngx_pnalloc(cf->pool, file_size);
+                buf = ngx_alloc(file_size, cf->log);
                 if (buf == NULL) {
                     ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                                        "failed to allocate memory to parse "
@@ -1521,7 +1521,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 }
 
                 jsz = jrc;
-                jtok = ngx_palloc(cf->pool, sizeof(jsmntok_t) * jsz);
+                jtok = ngx_alloc(sizeof(jsmntok_t) * jsz, cf->log);
                 if (jtok == NULL) {
                     ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                                        "failed to allocate memory to parse "
@@ -1532,7 +1532,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 jsmn_init(&jparse);
 
                 jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
-                if (jrc < 0|| jtok[0].type != JSMN_OBJECT) {
+                if (jrc < 0 || jtok[0].type != JSMN_OBJECT) {
                     ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                                        "JSON parse error: %d", jrc);
                     break;
@@ -1561,6 +1561,9 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 copy_backup_ok = 1;
 
             } while (0);
+
+            ngx_free(buf);
+            ngx_free(jtok);
 
             if (cleanup_backup) {
                 if (ngx_close_file(backup_file.fd) == NGX_FILE_ERROR) {
@@ -1652,7 +1655,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     jsmn_init(&jparse);
 
     jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
-    if (jrc < 0|| jtok[0].type != JSMN_OBJECT) {
+    if (jrc < 0 || jtok[0].type != JSMN_OBJECT) {
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "JSON parse error: %d", jrc);
         return NGX_CONF_ERROR;
     }
@@ -1696,7 +1699,7 @@ ngx_http_cnt_load_persistent_counters(ngx_log_t *log, ngx_str_t collection,
 
     elts = vars->elts;
 
-    for (i = 1 ;i < collection_size; i++) {
+    for (i = 1; i < collection_size; i++) {
         if (collection_tok[i].type != JSMN_STRING) {
             ngx_log_error(NGX_LOG_ERR, log, 0,
                           "unexpected structure of JSON data: "

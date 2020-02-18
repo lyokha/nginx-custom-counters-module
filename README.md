@@ -139,7 +139,7 @@ e.g.
 Collecting all counters in a JSON object
 ----------------------------------------
 
-Starting from version *1.5* of the module, a new predefined variable
+Starting from version *2.0* of the module, a new predefined variable
 `$cnt_collection` can be used to collect values of all counters from all counter
 sets and display them as a JSON object.
 

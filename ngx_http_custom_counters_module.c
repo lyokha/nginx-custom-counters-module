@@ -5,7 +5,7 @@
  *
  *    Description:  nginx module for shared custom counters
  *
- *        Version:  1.5
+ *        Version:  2.0
  *        Created:  04.08.2016 14:00:10
  *       Revision:  none
  *       Compiler:  gcc
@@ -1163,7 +1163,9 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     ngx_str_t                      base_var;
     ngx_http_variable_t           *v;
     ngx_uint_t                     negative, invalid;
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     time_t                         now;
+#endif
 
     scf = ngx_http_get_module_srv_conf(r, ngx_http_custom_counters_module);
     if (scf->cnt_set == NGX_CONF_UNSET_UINT) {
@@ -1265,14 +1267,17 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     ngx_http_cnt_main_conf_t      *mcf = conf;
     ngx_str_t                     *value = cf->args->elts;
     ngx_file_t                     file;
-    ngx_file_info_t                file_info;
+    ngx_file_info_t                file_info, file_info_backup;
     size_t                         file_size;
+    ngx_copy_file_t                copy_file;
     u_char                        *buf;
     ssize_t                        n;
     ngx_uint_t                     len;
     jsmn_parser                    jparse;
     jsmntok_t                     *jtok;
     int                            jrc, jsz;
+    ngx_uint_t                     not_found = 0, backup_not_found = 0;
+    ngx_uint_t                     copy_backup_file = 0;
 
     if (mcf->persistent_storage.len > 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -1358,8 +1363,117 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         /* the file does not exist yet */
+        not_found = 1;
+    }
 
-        goto backup;
+    len = value[1].len + 2;
+    mcf->persistent_storage_backup.data = ngx_pnalloc(cf->pool, len);
+    if (mcf->persistent_storage_backup.data == NULL) {
+        if (not_found) {
+            return NGX_CONF_ERROR;
+        } else {
+            goto cleanup;
+        }
+    }
+
+    ngx_memcpy(mcf->persistent_storage_backup.data, value[1].data,
+               value[1].len);
+    mcf->persistent_storage_backup.data[value[1].len] = '~';
+    mcf->persistent_storage_backup.data[value[1].len + 1] = '\0';
+    mcf->persistent_storage_backup.len = value[1].len + 1;
+
+    if (cf->args->nelts > 2) {
+        mcf->persistent_collection_check = ngx_parse_time(&value[2], 1);
+
+        if (mcf->persistent_collection_check == NGX_ERROR) {
+            ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                               "bad check interval \"%V\"", &value[2]);
+            if (not_found) {
+                return NGX_CONF_ERROR;
+            } else {
+                goto cleanup;
+            }
+        }
+    }
+
+    if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info_backup)
+        == NGX_FILE_ERROR)
+    {
+        if (ngx_errno != ENOENT) {
+            ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                               ngx_file_info_n " \"%V\" failed",
+                               &mcf->persistent_storage_backup);
+            if (not_found) {
+                return NGX_CONF_ERROR;
+            } else {
+                goto cleanup;
+            }
+        }
+
+        if (not_found) {
+            return NGX_OK;
+        }
+
+        backup_not_found = 1;
+    }
+
+    if (!backup_not_found) {
+        if (not_found) {
+            ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                               "backup persistent storage exists "
+                               "while main persistent storage does not, "
+                               "copying backup content into the main storage");
+            copy_backup_file = 1;
+        } else {
+            if (ngx_fd_info(file.fd, &file_info) == NGX_FILE_ERROR) {
+                ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                                   ngx_fd_info_n " \"%V\" failed", &file.name);
+                goto cleanup;
+            }
+
+            if (ngx_file_mtime(&file_info_backup) > ngx_file_mtime(&file_info))
+            {
+                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                   "backup persistent storage was modified "
+                                   "later than main persistent storage, "
+                                   "copying its content into the main storage");
+                copy_backup_file = 1;
+
+                if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                                       ngx_close_file_n " \"%V\" failed",
+                                       &file.name);
+                }
+            }
+        }
+
+        if (copy_backup_file) {
+            copy_file.size = ngx_file_size(&file_info_backup);
+            copy_file.buf_size = 0;
+            copy_file.access = 0644;
+            copy_file.time = ngx_file_mtime(&file_info_backup);
+            copy_file.log = cf->log;
+
+            if (ngx_copy_file(mcf->persistent_storage_backup.data,
+                              mcf->persistent_storage.data, &copy_file)
+                != NGX_OK)
+            {
+                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                   "failed to copy backup persistent storage "
+                                   "into main persistent storage");
+                return NGX_CONF_ERROR;
+            }
+
+            file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY,
+                                    NGX_FILE_OPEN, 0);
+
+            if (file.fd == NGX_INVALID_FILE) {
+                ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                                   ngx_open_file_n " \"%V\" failed",
+                                   &file.name);
+                return NGX_CONF_ERROR;
+            }
+        }
     }
 
     if (ngx_fd_info(file.fd, &file_info) == NGX_FILE_ERROR) {
@@ -1425,30 +1539,6 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     mcf->persistent_collection.data = buf;
     mcf->persistent_collection_tok = jtok;
     mcf->persistent_collection_size = jsz;
-
-backup:
-
-    if (cf->args->nelts > 2) {
-        mcf->persistent_collection_check = ngx_parse_time(&value[2], 1);
-
-        if (mcf->persistent_collection_check == NGX_ERROR) {
-            ngx_conf_log_error( NGX_LOG_ERR, cf, 0,
-                                "bad check interval \"%V\"", &value[2]);
-            return NGX_CONF_ERROR;
-        }
-
-        len = value[1].len + 2;
-        mcf->persistent_storage_backup.data = ngx_pnalloc(cf->pool, len);
-        if (mcf->persistent_storage_backup.data == NULL) {
-            return NGX_CONF_ERROR;
-        }
-
-        ngx_memcpy(mcf->persistent_storage_backup.data, value[1].data,
-                   value[1].len);
-        mcf->persistent_storage_backup.data[value[1].len] = '~';
-        mcf->persistent_storage_backup.data[value[1].len + 1] = '\0';
-        mcf->persistent_storage_backup.len = value[1].len + 1;
-    }
 
     return NGX_CONF_OK;
 

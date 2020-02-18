@@ -126,8 +126,8 @@ static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
 static ngx_int_t ngx_http_cnt_get_collection(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
-ngx_int_t ngx_http_cnt_build_collection(ngx_http_request_t *r,
-    ngx_cycle_t *cycle, ngx_str_t *collection);
+static ngx_int_t ngx_http_cnt_build_collection(ngx_http_request_t *r,
+    ngx_cycle_t *cycle, ngx_str_t *collection, ngx_uint_t survive_reload_only);
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
 static char *ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf, ngx_uint_t early);
@@ -622,7 +622,7 @@ ngx_http_cnt_get_collection(ngx_http_request_t *r,
 {
     ngx_str_t  collection;
 
-    if (ngx_http_cnt_build_collection(r, NULL, &collection) != NGX_OK) {
+    if (ngx_http_cnt_build_collection(r, NULL, &collection, 0) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -636,9 +636,10 @@ ngx_http_cnt_get_collection(ngx_http_request_t *r,
 }
 
 
-ngx_int_t
+static ngx_int_t
 ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
-                              ngx_str_t *collection)
+                              ngx_str_t *collection,
+                              ngx_uint_t survive_reload_only)
 {
     ngx_uint_t                         i, j;
     ngx_http_cnt_main_conf_t          *mcf;
@@ -685,7 +686,7 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
 
     cnt_sets = mcf->cnt_sets.elts;
     for (i = 0; i < nelts; i++) {
-        if (r == NULL && !cnt_sets[i].survive_reload) {
+        if (survive_reload_only && !cnt_sets[i].survive_reload) {
             continue;
         }
 
@@ -1266,7 +1267,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 {
     ngx_http_cnt_main_conf_t      *mcf = conf;
     ngx_str_t                     *value = cf->args->elts;
-    ngx_file_t                     file;
+    ngx_file_t                     file, backup_file;
     ngx_file_info_t                file_info, file_info_backup;
     size_t                         file_size;
     ngx_copy_file_t                copy_file;
@@ -1278,6 +1279,9 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     int                            jrc, jsz;
     ngx_uint_t                     not_found = 0, backup_not_found = 0;
     ngx_uint_t                     copy_backup_file = 0;
+    ngx_uint_t                     copy_backup_started = 0;
+    ngx_uint_t                     copy_backup_ok = 0;
+    ngx_uint_t                     cleanup_backup = 0;
 
     if (mcf->persistent_storage.len > 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -1309,7 +1313,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     mcf->persistent_storage.len = value[1].len;
 
     /* BEWARE: unnecessary reading persistent storage on every reload of Nginx,
-     * however this shoul not be very harmful */
+     * however this should not be very harmful */
     ngx_memzero(&file, sizeof(ngx_file_t));
 
     file.name = mcf->persistent_storage;
@@ -1411,7 +1415,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (not_found) {
-            return NGX_OK;
+            return NGX_CONF_OK;
         }
 
         backup_not_found = 1;
@@ -1439,6 +1443,8 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                                    "copying its content into the main storage");
                 copy_backup_file = 1;
 
+                /* close main persistent storage */
+
                 if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
                     ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
                                        ngx_close_file_n " \"%V\" failed",
@@ -1448,21 +1454,136 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (copy_backup_file) {
-            copy_file.size = ngx_file_size(&file_info_backup);
-            copy_file.buf_size = 0;
-            copy_file.access = 0644;
-            copy_file.time = ngx_file_mtime(&file_info_backup);
-            copy_file.log = cf->log;
 
-            if (ngx_copy_file(mcf->persistent_storage_backup.data,
-                              mcf->persistent_storage.data, &copy_file)
-                != NGX_OK)
-            {
-                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
-                                   "failed to copy backup persistent storage "
-                                   "into main persistent storage");
-                return NGX_CONF_ERROR;
+            do {
+                /* check that backup is not corrupted */
+
+                ngx_memzero(&backup_file, sizeof(ngx_file_t));
+
+                backup_file.name = mcf->persistent_storage_backup;
+                backup_file.log = cf->log;
+
+                backup_file.fd = ngx_open_file(backup_file.name.data,
+                                            NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
+
+                if (backup_file.fd == NGX_INVALID_FILE) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                                       ngx_open_file_n " \"%V\" failed",
+                                       &backup_file.name);
+                    break;
+                }
+
+                cleanup_backup = 1;
+
+                file_size = (size_t) ngx_file_size(&file_info_backup);
+
+                buf = ngx_pnalloc(cf->pool, file_size);
+                if (buf == NULL) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                       "failed to allocate memory to parse "
+                                       "JSON data");
+                    break;
+                }
+
+                n = ngx_read_file(&backup_file, buf, file_size, 0);
+
+                if (n == NGX_ERROR) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
+                                       ngx_read_file_n " \"%V\" failed",
+                                       &backup_file.name);
+                    break;
+                }
+
+                if (ngx_close_file(backup_file.fd) == NGX_FILE_ERROR) {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                                       ngx_close_file_n " \"%V\" failed",
+                                       &backup_file.name);
+                }
+
+                cleanup_backup = 0;
+
+                if ((size_t) n != file_size) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                       ngx_read_file_n " \"%V\" returned only "
+                                       "%z bytes instead of %z",
+                                       &backup_file.name, n, file_size);
+                    break;
+                }
+
+                jsmn_init(&jparse);
+
+                jrc = jsmn_parse(&jparse, (char *) buf, file_size, NULL, 0);
+                if (jrc < 0) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "JSON parse error: "
+                                       "%d", jrc);
+                    break;
+                }
+
+                jsz = jrc;
+                jtok = ngx_palloc(cf->pool, sizeof(jsmntok_t) * jsz);
+                if (jtok == NULL) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                       "failed to allocate memory to parse "
+                                       "JSON data");
+                    break;
+                }
+
+                jsmn_init(&jparse);
+
+                jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
+                if (jrc < 0|| jtok[0].type != JSMN_OBJECT) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                       "JSON parse error: %d", jrc);
+                    break;
+                }
+
+                copy_backup_started = 1;
+
+                /* copy backup into the main storage */
+
+                copy_file.size = ngx_file_size(&file_info_backup);
+                copy_file.buf_size = 0;
+                copy_file.access = NGX_FILE_DEFAULT_ACCESS;
+                copy_file.time = ngx_file_mtime(&file_info_backup);
+                copy_file.log = cf->log;
+
+                if (ngx_copy_file(mcf->persistent_storage_backup.data,
+                                  mcf->persistent_storage.data, &copy_file)
+                    != NGX_OK)
+                {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                       "failed to copy backup persistent "
+                                       "storage into main persistent storage");
+                    break;
+                }
+
+                copy_backup_ok = 1;
+
+            } while (0);
+
+            if (cleanup_backup) {
+                if (ngx_close_file(backup_file.fd) == NGX_FILE_ERROR) {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                                       ngx_close_file_n " \"%V\" failed",
+                                       &backup_file.name);
+                }
             }
+
+            if (copy_backup_started) {
+                if (!copy_backup_ok) {
+                    return NGX_CONF_ERROR;
+                }
+            } else {
+                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                   "backup file was not copied as "
+                                   "it seems to be corrupted");
+            }
+
+            if (not_found) {
+                return NGX_CONF_OK;
+            }
+
+            /* reopen main persistent storage */
 
             file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY,
                                     NGX_FILE_OPEN, 0);
@@ -1695,7 +1816,7 @@ ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
-    ngx_http_cnt_build_collection(r, cycle, &collection);
+    (void) ngx_http_cnt_build_collection(r, cycle, &collection, 1);
 
     if (ngx_write_file(&file, collection.data, collection.len, 0) == NGX_ERROR)
     {

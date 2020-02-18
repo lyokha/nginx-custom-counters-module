@@ -162,12 +162,26 @@ configuration level lines
 
 ```nginx
     counters_survive_reload on;
-    counters_persistent_storage /var/lib/nginx/counters.json;
+    counters_persistent_storage /var/lib/nginx/counters.json 10s;
 ```
 
 The first directive can be moved inside *server* levels of the configuration
 where counters persistency is really wanted. Path */var/lib/nginx/counters.json*
 denotes location where counters will be saved.
+
+Value *10s* defines time interval for saving persistent counters in a backup
+storage. This argument is optional: if not set then the counters won't be
+written into the backup storage. The backup storage name corresponds to the name
+of the main persistent storage with suffix *~* added. It is written by a worker
+process associated with an existing counter set when a user request comes and
+the specified time interval from the last write has elapsed. As soon as the
+backup storage is written by Nginx worker processes, the directory
+(*/var/lib/nginx* in our case) must have permissions for the workers' user. 
+
+Writing to the backup storage can be useful to restore persistent counters on
+power outage or *kill -9* of Nginx master process. In such cases the main
+storage will be replaced by the backup storage automatically given that the
+latter has more recent modification time and is not corrupted.
 
 Persistent counters require library [*JSMN*](https://github.com/zserge/jsmn),
 which is header-only. It means that for building them, you need to put file

@@ -22,6 +22,7 @@
 
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
 #define STATIC_JSMN
+#define JSMN_STRICT
 #include <jsmn.h>
 #endif
 

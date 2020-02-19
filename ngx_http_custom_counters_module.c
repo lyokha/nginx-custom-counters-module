@@ -1242,10 +1242,14 @@ ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early)
     }
 
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+    if (early) {
+        return NGX_OK;
+    }
+
     now = ngx_time();
 
     if (mcf->persistent_collection_check > 0
-        && difftime(now, mcf->persistent_collection_last_check)
+        && now - mcf->persistent_collection_last_check
             > mcf->persistent_collection_check)
     {
         if (ngx_http_cnt_write_persistent_counters(r, NULL, 1) != NGX_OK) {
@@ -1387,20 +1391,6 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     mcf->persistent_storage_backup.data[value[1].len + 1] = '\0';
     mcf->persistent_storage_backup.len = value[1].len + 1;
 
-    if (cf->args->nelts > 2) {
-        mcf->persistent_collection_check = ngx_parse_time(&value[2], 1);
-
-        if (mcf->persistent_collection_check == NGX_ERROR) {
-            ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
-                               "bad check interval \"%V\"", &value[2]);
-            if (not_found) {
-                return NGX_CONF_ERROR;
-            } else {
-                goto cleanup;
-            }
-        }
-    }
-
     if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info_backup)
         == NGX_FILE_ERROR)
     {
@@ -1416,7 +1406,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (not_found) {
-            return NGX_CONF_OK;
+            goto collection_check;
         }
 
         backup_not_found = 1;
@@ -1583,10 +1573,6 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                                    "it seems to be corrupted");
             }
 
-            if (not_found) {
-                return NGX_CONF_OK;
-            }
-
             /* reopen main persistent storage */
 
             file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY,
@@ -1664,6 +1650,18 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     mcf->persistent_collection.data = buf;
     mcf->persistent_collection_tok = jtok;
     mcf->persistent_collection_size = jsz;
+
+collection_check:
+
+    if (cf->args->nelts > 2) {
+        mcf->persistent_collection_check = ngx_parse_time(&value[2], 1);
+
+        if (mcf->persistent_collection_check == NGX_ERROR) {
+            ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                               "bad check interval \"%V\"", &value[2]);
+            return NGX_CONF_ERROR;
+        }
+    }
 
     return NGX_CONF_OK;
 
@@ -1747,8 +1745,7 @@ ngx_http_cnt_load_persistent_counters(ngx_log_t *log, ngx_str_t collection,
             tok.data = &collection.data[collection_tok[idx].start];
             for (k = 0; k < nelts; k++) {
                 if (elts[k].name.len == tok.len
-                    && ngx_strncmp(elts[k].name.data, tok.data,
-                                   tok.len) == 0)
+                    && ngx_strncmp(elts[k].name.data, tok.data, tok.len) == 0)
                 {
                     tok.len =
                             collection_tok[idx + 1].end -
@@ -1804,11 +1801,8 @@ ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
 
     ngx_memzero(&file, sizeof(ngx_file_t));
 
-    if (backup) {
-        file.name = mcf->persistent_storage_backup;
-    } else {
-        file.name = mcf->persistent_storage;
-    }
+    file.name = backup ? mcf->persistent_storage_backup :
+            mcf->persistent_storage;
     file.log = log;
 
     file.fd = ngx_open_file(file.name.data, NGX_FILE_WRONLY,

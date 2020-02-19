@@ -707,7 +707,7 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
 
         last = ngx_sprintf(last, "},");
     }
-    if (i > 0 && n_cnt_sets > 0) {
+    if (n_cnt_sets > 0) {
         last--;
     }
 

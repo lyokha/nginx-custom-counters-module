@@ -1814,7 +1814,9 @@ ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
-    (void) ngx_http_cnt_build_collection(r, cycle, &collection, 1);
+    if (ngx_http_cnt_build_collection(r, cycle, &collection, 1) != NGX_OK) {
+        goto cleanup;
+    }
 
     if (ngx_write_file(&file, collection.data, collection.len, 0) == NGX_ERROR)
     {
@@ -1829,6 +1831,15 @@ ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
     }
 
     return NGX_OK;
+
+cleanup:
+
+    if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
+                      ngx_close_file_n " \"%V\" failed", &file.name);
+    }
+
+    return NGX_ERROR;
 }
 
 

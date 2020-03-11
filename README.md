@@ -9,7 +9,7 @@ Table of contents
 
 - [Directives](#directives)
 - [Sharing between virtual servers](#sharing-between-virtual-servers)
-- [Collecting all counters in a JSON object](#collecting-all-counters-in-a-json-object)
+- [Collecting all counters in a single JSON object](#collecting-all-counters-in-a-single-json-object)
 - [Reloading Nginx configuration](#reloading-nginx-configuration)
 - [Persistent counters](#persistent-counters)
 - [An example](#an-example)
@@ -136,12 +136,12 @@ e.g.
         display_unreachable_counter_as -;
 ```
 
-Collecting all counters in a JSON object
-----------------------------------------
+Collecting all counters in a single JSON object
+-----------------------------------------------
 
 Starting from version *2.0* of the module, a new predefined variable
 `$cnt_collection` can be used to collect values of all counters from all counter
-sets and display them as a JSON object.
+sets and display them as a single JSON object. See [*an example*](#an-example).
 
 Reloading Nginx configuration
 -----------------------------
@@ -180,7 +180,7 @@ the directory (*/var/lib/nginx* in our case) must have read and write
 permissions for the workers' user. 
 
 Writing to the backup storage can be useful to restore persistent counters on
-power outage or *kill -9* of Nginx master process. In such cases the main
+power outage or *kill -9* of the Nginx master process. In such cases the main
 storage will be replaced by the backup storage automatically given that the
 latter will have more recent modification time and will not be corrupted.
 

@@ -1704,7 +1704,7 @@ collection_check:
         }
 
         if (backup_not_found) {
-            /* create backup file having the master process permissions,
+            /* create backup file with the master process permissions,
              * later, in the module init function it must be chown()-ed */
 
             fd = ngx_open_file(mcf->persistent_storage_backup.data,

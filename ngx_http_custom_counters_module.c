@@ -96,7 +96,7 @@ typedef struct {
     int                        persistent_collection_size;
     time_t                     persistent_collection_check;
     time_t                     persistent_collection_last_check;
-    ngx_uint_t                 persistent_storage_backup_needs_init;
+    ngx_uint_t                 persistent_storage_backup_requires_init;
 #endif
 } ngx_http_cnt_main_conf_t;
 
@@ -1281,7 +1281,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     ngx_str_t                      path;
     ngx_file_t                     file, backup_file;
     ngx_file_info_t                file_info, file_info_backup;
-    size_t                         file_size;
+    size_t                         file_size = 0;
     ngx_copy_file_t                copy_file;
     ngx_fd_t                       fd;
     u_char                        *buf = NULL;
@@ -1482,6 +1482,10 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
                 file_size = (size_t) ngx_file_size(&file_info_backup);
 
+                if (file_size == 0) {
+                    break;
+                }
+
                 buf = ngx_alloc(file_size, cf->log);
                 if (buf == NULL) {
                     ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
@@ -1582,10 +1586,16 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                     return NGX_CONF_ERROR;
                 }
             } else {
-                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
-                                   "backup file \"%V\" was not copied as "
-                                   "it seems to be corrupted",
-                                   &backup_file.name);
+                if (file_size == 0) {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                       "backup file \"%V\" was not copied as "
+                                       "it was empty", &backup_file.name);
+                } else {
+                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                                       "backup file \"%V\" was not copied as "
+                                       "it seemed to be corrupted",
+                                       &backup_file.name);
+                }
                 if (not_found) {
                     goto collection_check;
                 }
@@ -1612,6 +1622,13 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     }
 
     file_size = (size_t) ngx_file_size(&file_info);
+
+    if (file_size == 0) {
+        ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                           "file \"%V\" is empty, delete it and run again",
+                           &file.name);
+        goto cleanup;
+    }
 
     buf = ngx_pnalloc(cf->pool, file_size);
     if (buf == NULL) {
@@ -1707,7 +1724,7 @@ collection_check:
                                    &mcf->persistent_storage_backup);
             }
 
-            mcf->persistent_storage_backup_needs_init = 1;
+            mcf->persistent_storage_backup_requires_init = 1;
         }
     }
 
@@ -1898,18 +1915,22 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     ngx_core_conf_t             *ccf;
     ngx_file_info_t              file_info;
 
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_custom_counters_module);
+
+    if (mcf->persistent_storage_backup.len == 0) {
+        return NGX_OK;
+    }
+
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     if (!ccf || ccf->user == (ngx_uid_t) NGX_CONF_UNSET_UINT) {
         return NGX_OK;
     }
 
-    mcf = ngx_http_cycle_get_module_main_conf(cycle,
-                                              ngx_http_custom_counters_module);
-
     if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info)
         == NGX_FILE_ERROR)
     {
-        if (mcf->persistent_storage_backup_needs_init) {
+        if (mcf->persistent_storage_backup_requires_init) {
             ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
                           ngx_file_info_n " \"%V\" failed",
                           &mcf->persistent_storage_backup);
@@ -1919,7 +1940,7 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
         file_info.st_uid = ccf->user;
     }
 
-    if ((mcf->persistent_storage_backup_needs_init
+    if ((mcf->persistent_storage_backup_requires_init
          || file_info.st_uid != ccf->user)
         && chown((const char *) mcf->persistent_storage_backup.data,
                  ccf->user, -1) == -1)

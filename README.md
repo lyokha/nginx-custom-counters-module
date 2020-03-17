@@ -167,7 +167,10 @@ configuration level lines
 
 The first directive can be moved inside *server* levels of the configuration
 where counters persistency is really wanted. Path */var/lib/nginx/counters.json*
-denotes location where counters will be saved.
+denotes the directory where the counters will be saved. If the path is relative
+(i.e. it does not start with */*), then the counters will be saved in the
+*prefix* directory: run `nginx -h` to see where default prefix directory is
+located.
 
 Value *10s* defines time interval for saving persistent counters in a backup
 storage. This argument is optional: if not set then the counters won't be
@@ -175,14 +178,12 @@ written into the backup storage. The name of the backup file corresponds to the
 name of the main persistent storage with suffix *~* added. The file gets written
 by a worker process when a user request comes to a virtual server associated
 with an existing counter set and the specified time interval from the last write
-has elapsed. As soon as the backup storage is written by Nginx worker processes,
-the directory (*/var/lib/nginx* in our case) must have read and write
-permissions for the workers' user. 
+has elapsed. 
 
 Writing to the backup storage can be useful to restore persistent counters on
 power outage or *kill -9* of the Nginx master process. In such cases the main
 storage will be replaced by the backup storage automatically given that the
-latter will have more recent modification time and will not be corrupted.
+latter has more recent modification time and is not corrupted.
 
 Persistent counters require library [*JSMN*](https://github.com/zserge/jsmn),
 which is header-only. It means that for building them, you need to put file

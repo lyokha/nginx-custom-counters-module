@@ -1918,7 +1918,9 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     mcf = ngx_http_cycle_get_module_main_conf(cycle,
                                               ngx_http_custom_counters_module);
 
-    if (mcf->persistent_storage_backup.len == 0) {
+    if (mcf->persistent_collection_check == 0
+        || mcf->persistent_storage_backup.len == 0)
+    {
         return NGX_OK;
     }
 

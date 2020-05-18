@@ -30,14 +30,17 @@ configuration.
 ```nginx
 counter $cnt_name1 set 1;
 counter $cnt_name2 inc $inc_cnt_name2;
+counter $cnt_name2 undo;
 ```
 
 Variables `$cnt_name1` and `$cnt_name2` can be accessed elsewhere in the
 configuration: they return values held in a shared memory and thus are equal
 across all workers at the same moment. The second argument of the directive is
-an operation &mdash; *set* or *inc* (i.e. increment). The third argument &mdash;
-an integer (possibly negative) or a variable (possibly negated), is optional,
-its default value is *1*.
+an operation &mdash; *set*, *inc* (i.e. increment), or *undo*. The third
+argument is applicable to *set* and *inc* operations only. This is an optional
+integer value (possibly negative) or a variable (possibly negated), the default
+value is *1*. The *undo* operation discards all changes to the counter made on
+the upper levels of the merged hierarchies.
 
 Starting from version *1.3* of the module, directive `counter` may declare
 *no-op* counters such as
@@ -59,6 +62,7 @@ entry points before any *rewrites* and *ifs*. They are allowed only on
 ```nginx
 early_counter $cnt_name1 set 1;
 early_counter $cnt_name2 inc $inc_cnt_name2;
+early_counter $cnt_name2 undo;
 ```
 
 Meaning of the arguments corresponds to that of the normal counters.

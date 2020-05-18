@@ -33,7 +33,8 @@ static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
 
 typedef enum {
     ngx_http_cnt_op_set,
-    ngx_http_cnt_op_inc
+    ngx_http_cnt_op_inc,
+    ngx_http_cnt_op_undo
 } ngx_http_cnt_op_e;
 
 
@@ -1006,6 +1007,16 @@ ngx_http_cnt_counter_impl(ngx_conf_t *cf, ngx_command_t *cmd, void *conf,
     if (cf->args->nelts > 2) {
         if (value[2].len == 3 && ngx_strncmp(value[2].data, "set", 3) == 0) {
             op = ngx_http_cnt_op_set;
+        } else if (value[2].len == 4
+                   && ngx_strncmp(value[2].data, "undo", 4) == 0)
+        {
+            if (cf->args->nelts > 3) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                        "counter operation \"undo\" does not accept arguments");
+                return NGX_CONF_ERROR;
+            }
+            op = ngx_http_cnt_op_undo;
+            val = 0;
         } else if (value[2].len != 3
                    || ngx_strncmp(value[2].data, "inc", 3) != 0)
         {
@@ -1095,8 +1106,8 @@ ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
             return NGX_CONF_ERROR;
         }
         if (cnt_data->op == ngx_http_cnt_op_inc) {
-            if (new_data->op == ngx_http_cnt_op_set) {
-                new_data->op = ngx_http_cnt_op_set;
+            if (new_data->op == ngx_http_cnt_op_undo) {
+                new_data->op = ngx_http_cnt_op_inc;
             }
             new_data->value += cnt_data->value;
             size = cnt_data->rt_vars.nelts;

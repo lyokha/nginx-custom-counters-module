@@ -165,12 +165,12 @@ static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
-static ngx_int_t ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, ngx_conf_t *cf_conf,
-    void *conf, ngx_uint_t size, ngx_str_t *counter_name, ngx_str_t base_name);
-static ngx_int_t ngx_http_cnt_histogram_special_var(ngx_conf_t *cf,
-    ngx_conf_t *cf_conf, void *conf, ngx_http_cnt_srv_conf_t *scf,
-    ngx_str_t *counter_name, ngx_str_t *counter_op_value, ngx_str_t base_name,
-    ngx_int_t idx, ngx_http_cnt_histogram_special_var_e var);
+static ngx_int_t ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, void *conf,
+    ngx_uint_t size, ngx_str_t *counter_name, ngx_str_t base_name);
+static ngx_int_t ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
+    ngx_http_cnt_srv_conf_t *scf, ngx_str_t *counter_name,
+    ngx_str_t *counter_op_value, ngx_str_t base_name, ngx_int_t idx,
+    ngx_http_cnt_histogram_special_var_e var);
 static char *ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
@@ -1363,9 +1363,8 @@ ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 static ngx_int_t
-ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, ngx_conf_t *cf_conf, void *conf,
-                           ngx_uint_t size, ngx_str_t *counter_name,
-                           ngx_str_t base_name)
+ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, void *conf, ngx_uint_t size,
+                           ngx_str_t *counter_name, ngx_str_t base_name)
 {
     ngx_uint_t  i;
 
@@ -1381,7 +1380,7 @@ ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, ngx_conf_t *cf_conf, void *conf,
         ngx_memcpy(counter_name->data + 1, base_name.data, base_name.len);
         (void) ngx_snprintf(counter_name->data + base_name.len + 1, 3,
                             "_%02i", i);
-        if (ngx_http_cnt_counter_impl(cf_conf, NULL, conf, 0)) {
+        if (ngx_http_cnt_counter_impl(cf, NULL, conf, 0)) {
             return NGX_ERROR;
         }
     }
@@ -1395,7 +1394,7 @@ ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, ngx_conf_t *cf_conf, void *conf,
     counter_name->data[0] = '$';
     ngx_memcpy(counter_name->data + 1, base_name.data, base_name.len);
     ngx_memcpy(counter_name->data + 1 + base_name.len, "_sum", 4);
-    if (ngx_http_cnt_counter_impl(cf_conf, NULL, conf, 0)) {
+    if (ngx_http_cnt_counter_impl(cf, NULL, conf, 0)) {
         return NGX_ERROR;
     }
 
@@ -1404,8 +1403,8 @@ ngx_http_cnt_histogram_cmd(ngx_conf_t *cf, ngx_conf_t *cf_conf, void *conf,
 
 
 static ngx_int_t
-ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, ngx_conf_t *cf_conf,
-                                   void *conf, ngx_http_cnt_srv_conf_t *scf,
+ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
+                                   ngx_http_cnt_srv_conf_t *scf,
                                    ngx_str_t *counter_name,
                                    ngx_str_t *counter_op_value,
                                    ngx_str_t base_name, ngx_int_t idx,
@@ -1453,7 +1452,7 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, ngx_conf_t *cf_conf,
     ngx_memcpy(counter_op_value->data + 1, "inc_", 4);
     ngx_memcpy(counter_op_value->data + 1 + 4, counter_name->data + 1,
                counter_name->len - 1);
-    if (ngx_http_cnt_counter_impl(cf_conf, NULL, conf, 0)) {
+    if (ngx_http_cnt_counter_impl(cf, NULL, conf, 0)) {
         return NGX_ERROR;
     }
     inc_var_name.len = counter_name->len + 4;
@@ -1467,7 +1466,7 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, ngx_conf_t *cf_conf,
     ngx_memcpy(inc_var_name.data + 4, counter_name->data,
                counter_name->len);
     inc_v = ngx_http_add_variable(cf, &inc_var_name,
-                                  NGX_HTTP_VAR_CHANGEABLE);
+                                  NGX_HTTP_VAR_CHANGEABLE|NGX_HTTP_VAR_NOHASH);
     if (inc_v == NULL) {
         return NGX_ERROR;
     }
@@ -1505,8 +1504,8 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_int_t                           idx = NGX_ERROR;
     ngx_int_t                           v_idx, cnt_v_idx, *pv_idx;
     ngx_int_t                           val;
-    ngx_conf_t                         *cf_conf;
-    ngx_array_t                         cf_args;
+    ngx_conf_t                          cf_cnt;
+    ngx_array_t                         cf_cnt_args;
     ngx_str_t                          *counter_cmd, *counter_name;
     ngx_str_t                          *counter_op, *counter_op_value;
     ngx_str_t                           inc_var_name;
@@ -1569,67 +1568,64 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    if (ngx_array_init(&cf_args, cf->pool, 4, sizeof(ngx_str_t)) != NGX_OK) {
+    if (ngx_array_init(&cf_cnt_args, cf->pool, 4, sizeof(ngx_str_t)) != NGX_OK)
+    {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                         "failed to allocate memory for histogram data");
         return NGX_CONF_ERROR;
     }
 
-    counter_cmd = ngx_array_push(&cf_args);
+    counter_cmd = ngx_array_push(&cf_cnt_args);
     if (counter_cmd == NULL) {
         return NGX_CONF_ERROR;
     }
     ngx_str_set(counter_cmd, "counter");
-    counter_name = ngx_array_push(&cf_args);
+    counter_name = ngx_array_push(&cf_cnt_args);
     if (counter_name == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    cf_conf = ngx_palloc(cf->pool, sizeof(ngx_conf_t));
-    if (cf_conf == NULL) {
-        return NGX_CONF_ERROR;
-    }
-    *cf_conf = *cf;
-    cf_conf->args = &cf_args;
+    cf_cnt = *cf;
+    cf_cnt.args = &cf_cnt_args;
 
     if (cf->args->nelts == 4) {
         val = ngx_atoi(value[2].data, value[2].len);
         if (val == NGX_ERROR) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "not a number \"%V\"",
                                &value[2]);
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         if (val == 0 || val > ngx_http_cnt_histogram_max_bins) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "number of bins bins must be greater than 0 "
                                "but not greater than %i",
                                ngx_http_cnt_histogram_max_bins);
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         if (idx != NGX_ERROR) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "histogram \"%V\" "
                                "was already declared in this counter set",
                                &value[1]);
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         if (value[3].data[0] != '$') {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "invalid variable name \"%V\"", &value[3]);
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         value[3].len--;
         value[3].data++;
 
         var = ngx_array_push(&cnt_set->histograms);
         if (var == NULL) {
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         if (ngx_array_init(&var->cnt_idx, cf->pool, val, sizeof(ngx_int_t))
             != NGX_OK)
         {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "failed to allocate memory for histogram data");
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         idx = last_i;
 
@@ -1638,14 +1634,14 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             return NGX_CONF_ERROR;
         }
 
-        counter_op = ngx_array_push(&cf_args);
+        counter_op = ngx_array_push(&cf_cnt_args);
         if (counter_op == NULL) {
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
         ngx_str_set(counter_op, "inc");
-        counter_op_value = ngx_array_push(&cf_args);
+        counter_op_value = ngx_array_push(&cf_cnt_args);
         if (counter_op_value == NULL) {
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
 
         for (j = 0; j < val; j++) {
@@ -1654,7 +1650,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             if (counter_name->data == NULL) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                             "failed to allocate memory for histogram data");
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             counter_name->data[0] = '$';
             ngx_memcpy(counter_name->data + 1, value[1].data, value[1].len);
@@ -1665,15 +1661,15 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             cnt_v = ngx_http_add_variable(cf, counter_name,
                                           NGX_HTTP_VAR_CHANGEABLE);
             if (cnt_v == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             cnt_v_idx = ngx_http_get_variable_index(cf, counter_name);
             if (cnt_v_idx == NGX_ERROR) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             pv_idx = ngx_array_push(&var->cnt_idx);
             if (pv_idx == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             *pv_idx = cnt_v_idx;
             counter_name->data -= 1;
@@ -1684,36 +1680,36 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             if (counter_op_value->data == NULL) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                             "failed to allocate memory for histogram data");
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             counter_op_value->data[0] = '$';
             ngx_memcpy(counter_op_value->data + 1, "inc_", 4);
             ngx_memcpy(counter_op_value->data + 1 + 4, counter_name->data + 1,
                        counter_name->len - 1);
-            if (ngx_http_cnt_counter_impl(cf_conf, NULL, conf, 0)) {
-                goto cleanup;
+            if (ngx_http_cnt_counter_impl(&cf_cnt, NULL, conf, 0)) {
+                return NGX_CONF_ERROR;
             }
             inc_var_name.len = counter_name->len + 4;
             inc_var_name.data = ngx_pnalloc(cf->pool, inc_var_name.len);
             if (inc_var_name.data == NULL) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                             "failed to allocate memory for histogram data");
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             ngx_memcpy(inc_var_name.data, "inc_", 4);
             ngx_memcpy(inc_var_name.data + 4, counter_name->data,
                        counter_name->len);
             inc_v = ngx_http_add_variable(cf, &inc_var_name,
-                                          NGX_HTTP_VAR_CHANGEABLE);
+                                NGX_HTTP_VAR_CHANGEABLE|NGX_HTTP_VAR_NOHASH);
             if (inc_v == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             if (inc_v->get_handler != NULL
                 && inc_v->get_handler != ngx_http_cnt_get_histogram_inc_value)
             {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                         "histogram inc variable has a different setter");
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             if (ngx_http_cnt_var_data_init(cf, scf, inc_v, idx,
                                            ngx_http_cnt_get_histogram_inc_value,
@@ -1723,21 +1719,19 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 return NGX_CONF_ERROR;
             }
         }
-        if (ngx_http_cnt_histogram_special_var(cf, cf_conf, conf, scf,
-                                               counter_name, counter_op_value,
-                                               value[1], idx,
+        if (ngx_http_cnt_histogram_special_var(&cf_cnt, conf, scf, counter_name,
+                                               counter_op_value, value[1], idx,
                                                ngx_http_cnt_histogram_sum)
             != NGX_OK)
         {
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
-        if (ngx_http_cnt_histogram_special_var(cf, cf_conf, conf, scf,
-                                               counter_name, counter_op_value,
-                                               value[1], idx,
+        if (ngx_http_cnt_histogram_special_var(&cf_cnt, conf, scf, counter_name,
+                                               counter_op_value, value[1], idx,
                                                ngx_http_cnt_histogram_err)
             != NGX_OK)
         {
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
 
         var->self = v_idx;
@@ -1754,18 +1748,19 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "histogram \"%V\" "
                                    "was not declared in this counter set",
                                    &value[1]);
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
-            counter_op = ngx_array_push(&cf_args);
+            counter_op = ngx_array_push(&cf_cnt_args);
             if (counter_op == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             ngx_str_set(counter_op, "undo");
-            if (ngx_http_cnt_histogram_cmd(cf, cf_conf, conf,
+            if (ngx_http_cnt_histogram_cmd(&cf_cnt, conf,
                                            vars[idx].cnt_idx.nelts,
-                                           counter_name, value[1]) != NGX_OK)
+                                           counter_name, value[1])
+                != NGX_OK)
             {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
         } else if (value[2].len == 5
                    && ngx_strncmp(value[2].data, "reset", 5) == 0)
@@ -1774,40 +1769,33 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "histogram \"%V\" "
                                    "was not declared in this counter set",
                                    &value[1]);
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
-            counter_op = ngx_array_push(&cf_args);
+            counter_op = ngx_array_push(&cf_cnt_args);
             if (counter_op == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             ngx_str_set(counter_op, "set");
-            counter_op_value = ngx_array_push(&cf_args);
+            counter_op_value = ngx_array_push(&cf_cnt_args);
             if (counter_op_value == NULL) {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
             ngx_str_set(counter_op_value, "0");
-            if (ngx_http_cnt_histogram_cmd(cf, cf_conf, conf,
+            if (ngx_http_cnt_histogram_cmd(&cf_cnt, conf,
                                            vars[idx].cnt_idx.nelts,
-                                           counter_name, value[1]) != NGX_OK)
+                                           counter_name, value[1])
+                != NGX_OK)
             {
-                goto cleanup;
+                return NGX_CONF_ERROR;
             }
         } else {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "unknown histogram operation \"%V\"", &value[2]);
-            goto cleanup;
+            return NGX_CONF_ERROR;
         }
     }
 
-    ngx_pfree(cf->pool, cf_conf);
-
     return NGX_CONF_OK;
-
-cleanup:
-
-    ngx_pfree(cf->pool, cf_conf);
-
-    return NGX_CONF_ERROR;
 }
 
 

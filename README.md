@@ -12,6 +12,7 @@ Table of contents
 - [Collecting all counters in a single JSON object](#collecting-all-counters-in-a-single-json-object)
 - [Reloading Nginx configuration](#reloading-nginx-configuration)
 - [Persistent counters](#persistent-counters)
+- [Histograms](#histograms)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
 - [See also](#see-also)
@@ -201,6 +202,29 @@ CFLAGS="$CFLAGS -DNGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY"
 
 in file *config*.
 
+Histograms
+----------
+
+Histograms provide a convenient way of dealing with a set of normal counters
+associated with an arbitrary range.
+
+#### Synopsis
+
+```nginx
+histogram $hst_name 12 $bound_var;
+histogram $hst_name undo;
+histogram $hst_name reset;
+```
+
+The upper line declares a histogram with *12* bins. The histogram must be bound
+to a variable to read the number of a bin to increment from. In this example,
+it's expected that variable `$bound_var` will return numbers in range *0 -- 11*
+according to the number of the histogram bins. If it returns some unexpected
+value then variable `$hst_name_err` (which is declared implicitly) will be
+incremented instead of the histogram counters. The counters themselves and their
+sum value can be accessed directly via implicitly declared variable
+`$hst_name_00 .. $hst_name_11` and `$hst_name_sum`.
+
 An example
 ----------
 
@@ -219,6 +243,21 @@ http {
     sendfile            on;
 
     access_log          /tmp/nginx-test-custom-counters-access.log;
+
+    map $request_time $request_time_bin {
+        default         error;
+        "~^0\.00[0-4]"  0;
+        "~^0\.00[5-9]"  1;
+        "~^0\.0[0-4]"   2;
+        "~^0\.0[5-9]"   3;
+        "~^0\.[0-4]"    4;
+        "~^0\.[5-9]"    5;
+        "~^[1-4]\."     6;
+        "~^[5-9]\."     7;
+        "~^[1-2]\d\."   8;
+        "~^[3-5]\d\."   9;
+        "~^\d+"         10;
+    }
 
     counters_survive_reload on;
 
@@ -308,6 +347,39 @@ http {
             echo "all = $cnt_all_requests";
         }
     }
+
+    server {
+        listen          8040;
+        server_name     test.histogram;
+
+        histogram $hst_request_time 11 $request_time_bin;
+
+        location / {
+            echo_sleep 0.5;
+            echo Ok;
+        }
+
+        location /1 {
+            echo_sleep 1;
+            echo Ok;
+        }
+    }
+
+    server {
+        listen          8050;
+        server_name     monitor.test-histogram;
+        counter_set_id  test.histogram;
+
+        location / {
+            echo "all bins: $hst_request_time";
+            echo "bin 04:   $hst_request_time_04";
+        }
+
+        location /reset {
+            histogram $hst_request_time reset;
+            echo Ok;
+        }
+    }
 }
 ```
 
@@ -370,8 +442,97 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq
   "other": {
     "cnt_test1_requests": 0
   }
+  "test.histogram": {
+    "hst_request_time_00": 0,
+    "hst_request_time_01": 0,
+    "hst_request_time_02": 0,
+    "hst_request_time_03": 0,
+    "hst_request_time_04": 0,
+    "hst_request_time_05": 0,
+    "hst_request_time_06": 0,
+    "hst_request_time_07": 0,
+    "hst_request_time_08": 0,
+    "hst_request_time_09": 0,
+    "hst_request_time_10": 0,
+    "hst_request_time_sum": 0,
+    "hst_request_time_err": 0
+  }
 }
 ```
+
+It's time to test our histogram.
+
+```ShellSession
+$ for in in {1..20} ; do curl -D- 'http://localhost:8040/' & done
+  ...
+$for in in {1..50} ; do curl -D- 'http://localhost:8040/1' & done
+  ...
+```
+
+Locations */* and */1* in the virtual server *test.histogram* listening on port
+*8040* delay responses for *0.5* and *1* seconds respectively. We can check this
+from the values of the histogram counters.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
+{
+  "test.histogram": {
+    "hst_request_time_00": 0,
+    "hst_request_time_01": 0,
+    "hst_request_time_02": 0,
+    "hst_request_time_03": 0,
+    "hst_request_time_04": 2,
+    "hst_request_time_05": 30,
+    "hst_request_time_06": 38,
+    "hst_request_time_07": 0,
+    "hst_request_time_08": 0,
+    "hst_request_time_09": 0,
+    "hst_request_time_10": 0,
+    "hst_request_time_sum": 70,
+    "hst_request_time_err": 0
+  }
+}
+```
+
+From this output we can see that there were *70* requests spread in bins
+*04 -- 06* which correspond approximately to a time range from *0.5* to *1* and
+more seconds.
+
+Let's see how to access all the bins and a specific bin.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8050/'
+all bins: 0,0,0,0,2,30,38,0,0,0,0
+bin 04:   2
+```
+
+And we also have a way to reset the histogram.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8050/reset'
+Ok
+$ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
+{
+  "test.histogram": {
+    "hst_request_time_00": 0,
+    "hst_request_time_01": 0,
+    "hst_request_time_02": 0,
+    "hst_request_time_03": 0,
+    "hst_request_time_04": 0,
+    "hst_request_time_05": 0,
+    "hst_request_time_06": 0,
+    "hst_request_time_07": 0,
+    "hst_request_time_08": 0,
+    "hst_request_time_09": 0,
+    "hst_request_time_10": 0,
+    "hst_request_time_sum": 0,
+    "hst_request_time_err": 0
+  }
+}
+```
+
+Though is not present in this example, histogram operation *undo* disables
+changing the histogram in the scope where it is declared.
 
 Remarks on using location ifs and complex conditions
 ----------------------------------------------------

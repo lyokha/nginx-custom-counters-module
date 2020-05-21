@@ -1565,7 +1565,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (ngx_array_init(&cf_cnt_args, cf->pool, 4, sizeof(ngx_str_t)) != NGX_OK)
     {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                        "failed to allocate memory for histogram data");
+                           "failed to allocate memory for histogram data");
         return NGX_CONF_ERROR;
     }
 
@@ -1591,8 +1591,8 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
         if (val == 0 || val > ngx_http_cnt_histogram_max_bins) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "number of bins bins must be greater than 0 "
-                               "but not greater than %i",
+                               "number of bins must be greater than 0 but "
+                               "not greater than %i",
                                ngx_http_cnt_histogram_max_bins);
             return NGX_CONF_ERROR;
         }
@@ -1703,7 +1703,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 && inc_v->get_handler != ngx_http_cnt_get_histogram_inc_value)
             {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                        "histogram inc variable has a different setter");
+                            "histogram inc variable has a different setter");
                 return NGX_CONF_ERROR;
             }
             if (ngx_http_cnt_var_data_init(cf, scf, inc_v, idx,

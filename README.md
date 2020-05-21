@@ -218,8 +218,8 @@ histogram $hst_name reset;
 
 The upper line declares a histogram with *12* bins. The histogram must be bound
 to a variable to read the number of a bin to increment from. In this example,
-it's expected that variable `$bound_var` will return numbers in range *0 -- 11*
-according to the number of the histogram bins. If it returns some unexpected
+it's expected that variable `$bound_var` will return numbers in range *0 &ndash;
+11* according to the number of the histogram bins. If it returns some unexpected
 value then variable `$hst_name_err` (which is declared implicitly) will be
 incremented instead of the histogram counters. The counters themselves and their
 sum value can be accessed directly via implicitly declared variable
@@ -465,7 +465,7 @@ It's time to test our histogram.
 ```ShellSession
 $ for in in {1..20} ; do curl -D- 'http://localhost:8040/' & done
   ...
-$for in in {1..50} ; do curl -D- 'http://localhost:8040/1' & done
+$ for in in {1..50} ; do curl -D- 'http://localhost:8040/1' & done
   ...
 ```
 
@@ -495,8 +495,8 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
 ```
 
 From this output we can see that there were *70* requests spread in bins
-*04 -- 06* which correspond approximately to a time range from *0.5* to *1* and
-more seconds.
+*04 &ndash; 06* which correspond approximately to a time range from *0.5* to *1*
+and more seconds.
 
 Let's see how to access all the bins and a specific bin.
 

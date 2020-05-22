@@ -441,7 +441,7 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq
   },
   "other": {
     "cnt_test1_requests": 0
-  }
+  },
   "test.histogram": {
     "hst_request_time_00": 0,
     "hst_request_time_01": 0,
@@ -469,9 +469,9 @@ $ for in in {1..50} ; do curl -D- 'http://localhost:8040/1' & done
   ...
 ```
 
-Locations */* and */1* in the virtual server *test.histogram* listening on port
-*8040* delay responses for *0.5* and *1* seconds respectively. We can check this
-from the values of the histogram counters.
+Locations */* and */1* in the virtual server *test.histogram* delay responses
+for *0.5* and *1* seconds respectively. We can check this from the values of the
+histogram counters.
 
 ```ShellSession
 $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
@@ -495,10 +495,10 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
 ```
 
 From this output, we can see that there were *70* requests spread in bins
-*04 &ndash; 06* which correspond approximately to a time range from *0.5* to *1
-and more* seconds.
+*04 &ndash; 06* which correspond approximately to a time range from *0.5* to
+*1-and-more* seconds.
 
-Let's see how to access all the bins and a specific bin.
+Let's see how to access all the bins at once and a specific bin.
 
 ```ShellSession
 $ curl -s 'http://127.0.0.1:8050/'

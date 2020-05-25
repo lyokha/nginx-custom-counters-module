@@ -193,14 +193,13 @@ latter has more recent modification time and is not corrupted.
 Persistent counters require library [*JSMN*](https://github.com/zserge/jsmn),
 which is header-only. It means that for building them, you need to put file
 *jsmn.h* in the source directory of this module or in a standard system include
-path such as */usr/include*. If you want to disable building persistent counters
-completely, remove line
+path such as */usr/include*. If you want to enable building persistent counters,
+set environment variable `$NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY` to *y* or *yes*
+before or when running Nginx *configure* script, e.g.
 
+```ShellSession
+$ NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY=yes ./configure ...
 ```
-CFLAGS="$CFLAGS -DNGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY"
-```
-
-in file *config*.
 
 Histograms
 ----------

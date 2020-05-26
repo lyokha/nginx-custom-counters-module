@@ -366,7 +366,7 @@ http {
 
     server {
         listen          8050;
-        server_name     monitor.test-histogram;
+        server_name     monitor.test.histogram;
         counter_set_id  test.histogram;
 
         location / {

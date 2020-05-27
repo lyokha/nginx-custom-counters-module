@@ -1082,6 +1082,8 @@ ngx_http_cnt_counter_set_init(ngx_conf_t *cf, ngx_http_cnt_main_conf_t *mcf,
         return NGX_ERROR;
     }
 
+    ngx_memzero(&cnt_set->histograms, sizeof(ngx_array_t));
+
     shm_data = ngx_palloc(cf->pool, sizeof(ngx_http_cnt_shm_data_t));
     if (shm_data == NULL) {
         return NGX_ERROR;

@@ -13,6 +13,7 @@ Table of contents
 - [Reloading Nginx configuration](#reloading-nginx-configuration)
 - [Persistent counters](#persistent-counters)
 - [Histograms](#histograms)
+- [Nginx master uptime counter](#nginx-master-uptime-counter)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
 - [See also](#see-also)
@@ -223,6 +224,13 @@ value then variable `$hst_name_err` (which is declared implicitly) will be
 incremented instead of the histogram counters. The counters themselves and their
 sum value can be accessed directly via implicitly declared variables
 `$hst_name_00 .. $hst_name_11` and `$hst_name_sum`.
+
+Nginx master uptime counter
+---------------------------
+
+There is a predefined counter variable `$cnt_uptime` which contains the number
+of seconds elapsed since the start of Nginx. Reloading Nginx with *SIGHUP* won't
+restart the counter. The counter is not collected in variable `$cnt_collection`.
 
 An example
 ----------

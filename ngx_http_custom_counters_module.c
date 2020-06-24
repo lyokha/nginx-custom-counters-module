@@ -27,6 +27,8 @@
 #endif
 
 
+static time_t  ngx_http_cnt_start_time;
+
 static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
     ngx_string("custom_counters_");
 static const ngx_int_t  ngx_http_cnt_histogram_max_bins = 32;
@@ -151,11 +153,13 @@ static char *ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent,
 static ngx_int_t ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data);
 static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
-static ngx_int_t ngx_http_cnt_get_collection(ngx_http_request_t *r,
+static ngx_int_t ngx_http_cnt_collection(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_cnt_build_collection(ngx_http_request_t *r,
     ngx_cycle_t *cycle, ngx_str_t *collection, ngx_uint_t survive_reload_only);
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
+static ngx_int_t ngx_http_cnt_uptime(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_cnt_get_histogram_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
 static ngx_int_t ngx_http_cnt_get_histogram_inc_value(ngx_http_request_t *r,
@@ -254,8 +258,8 @@ static ngx_command_t  ngx_http_cnt_commands[] = {
 
 static ngx_http_variable_t  ngx_http_cnt_vars[] =
 {
-    { ngx_string("cnt_collection"), NULL, ngx_http_cnt_get_collection,
-      0, 0, 0 },
+    { ngx_string("cnt_collection"), NULL, ngx_http_cnt_collection, 0, 0, 0 },
+    { ngx_string("cnt_uptime"), NULL, ngx_http_cnt_uptime, 0, 0, 0 },
 
     { ngx_null_string, NULL, NULL, 0, 0, 0 }
 };
@@ -671,8 +675,8 @@ unreachable_cnt:
 
 
 static ngx_int_t
-ngx_http_cnt_get_collection(ngx_http_request_t *r,
-                            ngx_http_variable_value_t *v, uintptr_t data)
+ngx_http_cnt_collection(ngx_http_request_t *r, ngx_http_variable_value_t *v,
+                        uintptr_t data)
 {
     ngx_str_t  collection;
 
@@ -792,6 +796,29 @@ ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf)
     }
 
     mcf->collection_buf_len = len;
+}
+
+
+static ngx_int_t
+ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
+                    uintptr_t data)
+{
+    u_char  *buf, *last;
+
+    buf = ngx_pnalloc(r->pool, NGX_TIME_T_LEN);
+    if (buf == NULL) {
+        return NGX_ERROR;
+    }
+
+    last = ngx_sprintf(buf, "%T", ngx_time() - ngx_http_cnt_start_time);
+
+    v->len          = last - buf;
+    v->data         = buf;
+    v->valid        = 1;
+    v->no_cacheable = 0;
+    v->not_found    = 0;
+
+    return NGX_OK;
 }
 
 
@@ -2657,6 +2684,10 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     ngx_http_cnt_main_conf_t    *mcf;
     ngx_core_conf_t             *ccf;
     ngx_file_info_t              file_info;
+
+    if (ngx_http_cnt_start_time == 0) {
+        ngx_http_cnt_start_time = ngx_time();
+    }
 
     mcf = ngx_http_cycle_get_module_main_conf(cycle,
                                               ngx_http_custom_counters_module);

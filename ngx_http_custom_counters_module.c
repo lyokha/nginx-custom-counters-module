@@ -28,6 +28,7 @@
 
 
 static time_t  ngx_http_cnt_start_time;
+static time_t  ngx_http_cnt_start_time_reload;
 
 static const ngx_str_t  ngx_http_cnt_shm_name_prefix =
     ngx_string("custom_counters_");
@@ -260,6 +261,7 @@ static ngx_http_variable_t  ngx_http_cnt_vars[] =
 {
     { ngx_string("cnt_collection"), NULL, ngx_http_cnt_collection, 0, 0, 0 },
     { ngx_string("cnt_uptime"), NULL, ngx_http_cnt_uptime, 0, 0, 0 },
+    { ngx_string("cnt_uptime_reload"), NULL, ngx_http_cnt_uptime, 1, 0, 0 },
 
     { ngx_null_string, NULL, NULL, 0, 0, 0 }
 };
@@ -334,6 +336,7 @@ ngx_http_cnt_init(ngx_conf_t *cf)
     ngx_str_t                    cnt_set_id;
     ngx_http_cnt_set_t          *cnt_sets;
     ngx_http_handler_pt         *h;
+    time_t                       now;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     cscfp = cmcf->servers.elts;
@@ -381,6 +384,13 @@ ngx_http_cnt_init(ngx_conf_t *cf)
     *h = ngx_http_cnt_log_phase_handler;
 
     ngx_http_cnt_set_collection_buf_len(mcf);
+
+    now = ngx_time();
+
+    if (ngx_http_cnt_start_time == 0) {
+        ngx_http_cnt_start_time = now;
+    }
+    ngx_http_cnt_start_time_reload = now;
 
     return NGX_OK;
 }
@@ -803,14 +813,19 @@ static ngx_int_t
 ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
                     uintptr_t data)
 {
-    u_char  *buf, *last;
+    u_char                            *buf, *last;
+    time_t                             now, start;
 
     buf = ngx_pnalloc(r->pool, NGX_TIME_T_LEN);
     if (buf == NULL) {
         return NGX_ERROR;
     }
 
-    last = ngx_sprintf(buf, "%T", ngx_time() - ngx_http_cnt_start_time);
+    now = ngx_time();
+    start = data == 0 ? ngx_http_cnt_start_time :
+            ngx_http_cnt_start_time_reload;
+
+    last = ngx_sprintf(buf, "%T", now - start);
 
     v->len          = last - buf;
     v->data         = buf;
@@ -2684,10 +2699,6 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     ngx_http_cnt_main_conf_t    *mcf;
     ngx_core_conf_t             *ccf;
     ngx_file_info_t              file_info;
-
-    if (ngx_http_cnt_start_time == 0) {
-        ngx_http_cnt_start_time = ngx_time();
-    }
 
     mcf = ngx_http_cycle_get_module_main_conf(cycle,
                                               ngx_http_custom_counters_module);

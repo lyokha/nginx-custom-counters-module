@@ -74,6 +74,7 @@ typedef struct {
 typedef struct {
     ngx_int_t                   idx;
     ngx_str_t                   name;
+    ngx_str_t                   tag;        /* boundary for histogram bins */
 } ngx_http_cnt_var_handle_t;
 
 
@@ -90,6 +91,12 @@ typedef struct {
     ngx_int_t                   idx;
     ngx_array_t                *range;
 } ngx_http_cnt_map_range_index_data_t;
+
+
+typedef struct {
+    double                      value;
+    ngx_str_t                   s_value;
+} ngx_http_cnt_range_boundary_data_t;
 
 
 typedef struct {
@@ -157,6 +164,7 @@ static char *ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent,
     void *child);
 static char *ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
+static ngx_int_t ngx_http_cnt_init_module(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data);
 static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
@@ -211,7 +219,6 @@ static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
     ngx_str_t cnt_set, ngx_array_t *vars, ngx_atomic_int_t *shm_data);
 static ngx_int_t ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
     ngx_cycle_t *cycle, ngx_uint_t backup);
-static ngx_int_t ngx_http_cnt_init_module(ngx_cycle_t *cycle);
 static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 #endif
 
@@ -304,11 +311,7 @@ ngx_module_t  ngx_http_custom_counters_module = {
     ngx_http_cnt_commands,                   /* module directives */
     NGX_HTTP_MODULE,                         /* module type */
     NULL,                                    /* init master */
-#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_http_cnt_init_module,                /* init module */
-#else
-    NULL,                                    /* init module */
-#endif
     NULL,                                    /* init process */
     NULL,                                    /* init thread */
     NULL,                                    /* exit thread */
@@ -539,6 +542,98 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     conf->cnt_data = child_data;
 
     return NGX_CONF_OK;
+}
+
+
+static ngx_int_t
+ngx_http_cnt_init_module(ngx_cycle_t *cycle)
+{
+    ngx_uint_t                            i, j, k;
+    ngx_http_core_main_conf_t            *cmcf;
+    ngx_http_cnt_main_conf_t             *mcf;
+    ngx_http_variable_t                  *cmvars;
+    ngx_http_cnt_set_histogram_data_t    *histograms;
+    ngx_http_cnt_set_t                   *cnt_sets;
+    ngx_http_cnt_var_handle_t            *vars;
+    ngx_http_cnt_map_range_index_data_t  *v_data;
+    ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+    ngx_core_conf_t                      *ccf;
+    ngx_file_info_t                       file_info;
+#endif
+
+    cmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_core_module);
+    cmvars = cmcf->variables.elts;
+
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_custom_counters_module);
+
+    cnt_sets = mcf->cnt_sets.elts;
+
+    for (i = 0; i < mcf->cnt_sets.nelts; i++) {
+        histograms = cnt_sets[i].histograms.elts;
+        for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
+            if (cmvars[histograms[j].bound_idx].get_handler
+                != ngx_http_cnt_get_range_index)
+            {
+                continue;
+            }
+            v_data = (ngx_http_cnt_map_range_index_data_t *)
+                    cmvars[histograms[j].bound_idx].data;
+            if (v_data->range != NULL) {
+                boundary = v_data->range->elts;
+            }
+            vars = histograms[j].cnt_data.elts;
+            for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
+                if (boundary == NULL || v_data->range == NULL
+                    || k > v_data->range->nelts)
+                {
+                    ngx_str_set(&vars[k].tag, "+Inf");
+                    break;
+                }
+                vars[k].tag = boundary[k].s_value;
+            }
+        }
+    }
+
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+    if (mcf->persistent_collection_check == 0
+        || mcf->persistent_storage_backup.len == 0)
+    {
+        return NGX_OK;
+    }
+
+    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+    if (!ccf || ccf->user == (ngx_uid_t) NGX_CONF_UNSET_UINT) {
+        return NGX_OK;
+    }
+
+    if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info)
+        == NGX_FILE_ERROR)
+    {
+        if (mcf->persistent_storage_backup_requires_init) {
+            ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                          ngx_file_info_n " \"%V\" failed",
+                          &mcf->persistent_storage_backup);
+            return NGX_ERROR;
+        }
+
+        file_info.st_uid = ccf->user;
+    }
+
+    if ((mcf->persistent_storage_backup_requires_init
+         || file_info.st_uid != ccf->user)
+        && chown((const char *) mcf->persistent_storage_backup.data,
+                 ccf->user, -1) == -1)
+    {
+        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                      "chown(\"%s\", %d) failed",
+                      mcf->persistent_storage_backup.data, ccf->user);
+        return NGX_ERROR;
+    }
+#endif
+
+    return NGX_OK;
 }
 
 
@@ -1075,7 +1170,8 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
     static const size_t                   buf_size = 32;
     u_char                                buf[buf_size], *p, *vbuf;
     ngx_int_t                             len;
-    double                                val, *range;
+    ngx_http_cnt_range_boundary_data_t   *range;
+    double                                val;
 
     if (v_data == NULL) {
         goto bad_data;
@@ -1109,7 +1205,7 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
     range = v_data->range->elts;
 
     for (i = 0; i < v_data->range->nelts; i++) {
-        if (val <= range[i]) {
+        if (val <= range[i].value) {
             break;
         }
     }
@@ -1563,10 +1659,12 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
     case ngx_http_cnt_histogram_sum:
         data->cnt_sum.idx = v_idx;
         data->cnt_sum.name = *counter_name;
+        ngx_str_null(&data->cnt_sum.tag);
         break;
     case ngx_http_cnt_histogram_err:
         data->cnt_err.idx = v_idx;
         data->cnt_err.name = *counter_name;
+        ngx_str_null(&data->cnt_err.tag);
         break;
     default:
         break;
@@ -1806,6 +1904,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             counter_name->len += 1;
             cnt->idx = cnt_v_idx;
             cnt->name = *counter_name;
+            ngx_str_null(&cnt->tag);
             counter_op_value->len = counter_name->len + 4;
             counter_op_value->data = ngx_pnalloc(cf->pool,
                                                  counter_op_value->len);
@@ -1953,7 +2052,8 @@ ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     static const size_t                   buf_size = 32;
     u_char                                buf[buf_size], *p;
     ngx_int_t                             len;
-    double                                cur, prev = 0.0, *pcur;
+    ngx_http_cnt_range_boundary_data_t   *pcur;
+    double                                cur, prev = 0.0;
 
     value = cf->args->elts;
 
@@ -2002,7 +2102,8 @@ ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         v_range = ngx_pcalloc(cf->pool, sizeof(ngx_array_t));
         if (v_range == NULL
             || ngx_array_init(v_range, cf->pool, cf->args->nelts - 3,
-                              sizeof(double)) != NGX_OK)
+                              sizeof(ngx_http_cnt_range_boundary_data_t))
+               != NGX_OK)
         {
             return NGX_CONF_ERROR;
         }
@@ -2031,7 +2132,9 @@ ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             if (pcur == NULL) {
                 return NGX_CONF_ERROR;
             }
-            *pcur = cur;
+            pcur->value = cur;
+            pcur->s_value = value[i];
+
             prev = cur;
         }
 
@@ -2884,55 +2987,6 @@ cleanup:
     }
 
     return NGX_ERROR;
-}
-
-
-static ngx_int_t
-ngx_http_cnt_init_module(ngx_cycle_t *cycle)
-{
-    ngx_http_cnt_main_conf_t    *mcf;
-    ngx_core_conf_t             *ccf;
-    ngx_file_info_t              file_info;
-
-    mcf = ngx_http_cycle_get_module_main_conf(cycle,
-                                              ngx_http_custom_counters_module);
-
-    if (mcf->persistent_collection_check == 0
-        || mcf->persistent_storage_backup.len == 0)
-    {
-        return NGX_OK;
-    }
-
-    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-    if (!ccf || ccf->user == (ngx_uid_t) NGX_CONF_UNSET_UINT) {
-        return NGX_OK;
-    }
-
-    if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info)
-        == NGX_FILE_ERROR)
-    {
-        if (mcf->persistent_storage_backup_requires_init) {
-            ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
-                          ngx_file_info_n " \"%V\" failed",
-                          &mcf->persistent_storage_backup);
-            return NGX_ERROR;
-        }
-
-        file_info.st_uid = ccf->user;
-    }
-
-    if ((mcf->persistent_storage_backup_requires_init
-         || file_info.st_uid != ccf->user)
-        && chown((const char *) mcf->persistent_storage_backup.data,
-                 ccf->user, -1) == -1)
-    {
-        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
-                      "chown(\"%s\", %d) failed",
-                      mcf->persistent_storage_backup.data, ccf->user);
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
 }
 
 

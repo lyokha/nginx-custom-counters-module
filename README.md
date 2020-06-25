@@ -217,7 +217,7 @@ histogram $hst_name reset;
 ```
 
 The upper line declares a histogram with *12* bins. The histogram must be bound
-to a variable to read the number of a bin to increment from. In this example,
+to a variable to read the number of the bin to increment from. In this example,
 it's expected that variable `$bound_var` will return numbers in range *0 &ndash;
 11* according to the number of the histogram bins. If it returns some unexpected
 value then variable `$hst_name_err` (which is declared implicitly) will be
@@ -225,13 +225,30 @@ incremented instead of the histogram counters. The counters themselves and their
 sum value can be accessed directly via implicitly declared variables
 `$hst_name_00 .. $hst_name_11` and `$hst_name_sum`.
 
+To simplify detection of the bin to increment in the case of a contiguous value
+distribution, directive `map_range_index` can be used. For example,
+
+```nginx
+    map_range_index $request_time $request_time_bin
+        0.005
+        0.01
+        0.05;
+```
+
+shall return in variable `$request_time_bin` values from *0* to *3* depending on
+the value of variable `$request_time`: if the request time was less than or
+equal to *0.005* then its value will be *0*, otherwise, if the request time was
+less than or equal to *0.01* then its value will be *1*, and so later, finally,
+if the request time was more than *0.05* then its value will be *3*.
+
 Nginx master uptime counters
 ----------------------------
 
 There are two predefined counter variables `$cnt_uptime` and
 `$cnt_uptime_reload` which contain the number of seconds elapsed since the start
 of Nginx. Reloading Nginx with *SIGHUP* won't restart the former counter. The
-counters are not collected in variable `$cnt_collection`.
+counters are not associated with any counter set identifier, nor are they
+collected in variable `$cnt_collection`.
 
 An example
 ----------
@@ -252,20 +269,17 @@ http {
 
     access_log          /tmp/nginx-test-custom-counters-access.log;
 
-    map $request_time $request_time_bin {
-        default         error;
-        "~^0\.00[0-4]"  0;
-        "~^0\.00[5-9]"  1;
-        "~^0\.0[0-4]"   2;
-        "~^0\.0[5-9]"   3;
-        "~^0\.[0-4]"    4;
-        "~^0\.[5-9]"    5;
-        "~^[1-4]\."     6;
-        "~^[5-9]\."     7;
-        "~^[1-2]\d\."   8;
-        "~^[3-5]\d\."   9;
-        "~^\d+"         10;
-    }
+    map_range_index $request_time $request_time_bin
+        0.005
+        0.01
+        0.05
+        0.1
+        0.5
+        1.0
+        5.0
+        10.0
+        30.0
+        60.0;
 
     counters_survive_reload on;
 
@@ -489,9 +503,9 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
     "hst_request_time_01": 0,
     "hst_request_time_02": 0,
     "hst_request_time_03": 0,
-    "hst_request_time_04": 2,
-    "hst_request_time_05": 30,
-    "hst_request_time_06": 38,
+    "hst_request_time_04": 13,
+    "hst_request_time_05": 45,
+    "hst_request_time_06": 12,
     "hst_request_time_07": 0,
     "hst_request_time_08": 0,
     "hst_request_time_09": 0,
@@ -510,8 +524,8 @@ Let's see how to access all the bins at once and a specific bin.
 
 ```ShellSession
 $ curl -s 'http://127.0.0.1:8050/'
-all bins: 0,0,0,0,2,30,38,0,0,0,0
-bin 04:   2
+all bins: 0,0,0,0,13,45,12,0,0,0,0
+bin 04:   13
 ```
 
 And we also have a way to reset the histogram.

@@ -74,7 +74,7 @@ typedef struct {
 typedef struct {
     ngx_int_t                   idx;
     ngx_str_t                   name;
-    ngx_str_t                   tag;        /* boundary for histogram bins */
+    ngx_str_t                   tag;         /* boundary for histogram bins */
 } ngx_http_cnt_var_handle_t;
 
 
@@ -1659,12 +1659,12 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
     case ngx_http_cnt_histogram_sum:
         data->cnt_sum.idx = v_idx;
         data->cnt_sum.name = *counter_name;
-        ngx_str_null(&data->cnt_sum.tag);
+        ngx_str_set(&data->cnt_sum.tag, "sum");
         break;
     case ngx_http_cnt_histogram_err:
         data->cnt_err.idx = v_idx;
         data->cnt_err.name = *counter_name;
-        ngx_str_null(&data->cnt_err.tag);
+        ngx_str_set(&data->cnt_err.tag, "err");
         break;
     default:
         break;

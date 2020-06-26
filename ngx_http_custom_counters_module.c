@@ -165,6 +165,7 @@ static char *ngx_http_cnt_merge_srv_conf(ngx_conf_t *cf, void *parent,
 static char *ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
 static ngx_int_t ngx_http_cnt_init_module(ngx_cycle_t *cycle);
+static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_cnt_shm_init(ngx_shm_zone_t *shm_zone, void *data);
 static ngx_int_t ngx_http_cnt_get_value(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t  data);
@@ -212,14 +213,14 @@ static ngx_int_t ngx_http_cnt_log_phase_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_cnt_update(ngx_http_request_t *r, ngx_uint_t early);
 
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-static char * ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
+static char *ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
+static ngx_int_t ngx_http_cnt_init_persistent_storage(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
     ngx_str_t collection, jsmntok_t *collection_tok, int collection_size,
     ngx_str_t cnt_set, ngx_array_t *vars, ngx_atomic_int_t *shm_data);
 static ngx_int_t ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
     ngx_cycle_t *cycle, ngx_uint_t backup);
-static void ngx_http_cnt_exit_master(ngx_cycle_t *cycle);
 #endif
 
 
@@ -316,11 +317,7 @@ ngx_module_t  ngx_http_custom_counters_module = {
     NULL,                                    /* init thread */
     NULL,                                    /* exit thread */
     NULL,                                    /* exit process */
-#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_http_cnt_exit_master,                /* exit master */
-#else
-    NULL,                                    /* exit master */
-#endif
     NGX_MODULE_V1_PADDING
 };
 
@@ -557,10 +554,6 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     ngx_http_cnt_var_handle_t            *vars;
     ngx_http_cnt_map_range_index_data_t  *v_data;
     ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
-#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-    ngx_core_conf_t                      *ccf;
-    ngx_file_info_t                       file_info;
-#endif
 
     cmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_core_module);
     cmvars = cmcf->variables.elts;
@@ -597,43 +590,21 @@ ngx_http_cnt_init_module(ngx_cycle_t *cycle)
     }
 
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-    if (mcf->persistent_collection_check == 0
-        || mcf->persistent_storage_backup.len == 0)
-    {
-        return NGX_OK;
-    }
-
-    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-    if (!ccf || ccf->user == (ngx_uid_t) NGX_CONF_UNSET_UINT) {
-        return NGX_OK;
-    }
-
-    if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info)
-        == NGX_FILE_ERROR)
-    {
-        if (mcf->persistent_storage_backup_requires_init) {
-            ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
-                          ngx_file_info_n " \"%V\" failed",
-                          &mcf->persistent_storage_backup);
-            return NGX_ERROR;
-        }
-
-        file_info.st_uid = ccf->user;
-    }
-
-    if ((mcf->persistent_storage_backup_requires_init
-         || file_info.st_uid != ccf->user)
-        && chown((const char *) mcf->persistent_storage_backup.data,
-                 ccf->user, -1) == -1)
-    {
-        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
-                      "chown(\"%s\", %d) failed",
-                      mcf->persistent_storage_backup.data, ccf->user);
+    if (ngx_http_cnt_init_persistent_storage(cycle) != NGX_OK) {
         return NGX_ERROR;
     }
 #endif
 
     return NGX_OK;
+}
+
+
+static void
+ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
+{
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+    (void) ngx_http_cnt_write_persistent_counters(NULL, cycle, 0);
+#endif
 }
 
 
@@ -2824,6 +2795,55 @@ cleanup:
 
 
 static ngx_int_t
+ngx_http_cnt_init_persistent_storage(ngx_cycle_t *cycle)
+{
+    ngx_http_cnt_main_conf_t      *mcf;
+    ngx_core_conf_t               *ccf;
+    ngx_file_info_t                file_info;
+
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_custom_counters_module);
+
+    if (mcf->persistent_collection_check == 0
+        || mcf->persistent_storage_backup.len == 0)
+    {
+        return NGX_OK;
+    }
+
+    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+    if (!ccf || ccf->user == (ngx_uid_t) NGX_CONF_UNSET_UINT) {
+        return NGX_OK;
+    }
+
+    if (ngx_file_info(mcf->persistent_storage_backup.data, &file_info)
+        == NGX_FILE_ERROR)
+    {
+        if (mcf->persistent_storage_backup_requires_init) {
+            ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                          ngx_file_info_n " \"%V\" failed",
+                          &mcf->persistent_storage_backup);
+            return NGX_ERROR;
+        }
+
+        file_info.st_uid = ccf->user;
+    }
+
+    if ((mcf->persistent_storage_backup_requires_init
+         || file_info.st_uid != ccf->user)
+        && chown((const char *) mcf->persistent_storage_backup.data,
+                 ccf->user, -1) == -1)
+    {
+        ngx_log_error(NGX_LOG_ERR, cycle->log, ngx_errno,
+                      "chown(\"%s\", %d) failed",
+                      mcf->persistent_storage_backup.data, ccf->user);
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
 ngx_http_cnt_load_persistent_counters(ngx_log_t *log, ngx_str_t collection,
                                       jsmntok_t *collection_tok,
                                       int collection_size, ngx_str_t cnt_set,
@@ -2987,13 +3007,6 @@ cleanup:
     }
 
     return NGX_ERROR;
-}
-
-
-static void
-ngx_http_cnt_exit_master(ngx_cycle_t *cycle)
-{
-    (void) ngx_http_cnt_write_persistent_counters(NULL, cycle, 0);
 }
 
 #endif

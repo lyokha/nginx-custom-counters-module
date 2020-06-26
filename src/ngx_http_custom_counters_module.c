@@ -56,18 +56,6 @@ typedef struct {
 
 
 typedef struct {
-    ngx_int_t                   idx;
-    ngx_array_t                *range;
-} ngx_http_cnt_map_range_index_data_t;
-
-
-typedef struct {
-    double                      value;
-    ngx_str_t                   s_value;
-} ngx_http_cnt_range_boundary_data_t;
-
-
-typedef struct {
     ngx_array_t                *cnt_sets;
     ngx_uint_t                  cnt_set;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
@@ -102,15 +90,11 @@ static ngx_int_t ngx_http_cnt_collection(ngx_http_request_t *r,
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
 static ngx_int_t ngx_http_cnt_uptime(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_cnt_get_range_index(ngx_http_request_t *r,
-    ngx_http_variable_value_t *v, uintptr_t  data);
 static char *ngx_http_cnt_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd,
-    void *conf);
-static char *ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_merge(ngx_conf_t *cf, ngx_array_t *dst,
     ngx_http_cnt_data_t *cnt_data);
@@ -442,48 +426,8 @@ ngx_http_cnt_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_cnt_init_module(ngx_cycle_t *cycle)
 {
-    ngx_uint_t                            i, j, k;
-    ngx_http_core_main_conf_t            *cmcf;
-    ngx_http_cnt_main_conf_t             *mcf;
-    ngx_http_variable_t                  *cmvars;
-    ngx_http_cnt_set_histogram_data_t    *histograms;
-    ngx_http_cnt_set_t                   *cnt_sets;
-    ngx_http_cnt_var_handle_t            *vars;
-    ngx_http_cnt_map_range_index_data_t  *v_data;
-    ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
-
-    cmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_core_module);
-    cmvars = cmcf->variables.elts;
-
-    mcf = ngx_http_cycle_get_module_main_conf(cycle,
-                                              ngx_http_custom_counters_module);
-
-    cnt_sets = mcf->cnt_sets.elts;
-
-    for (i = 0; i < mcf->cnt_sets.nelts; i++) {
-        histograms = cnt_sets[i].histograms.elts;
-        for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
-            if (cmvars[histograms[j].bound_idx].get_handler
-                != ngx_http_cnt_get_range_index)
-            {
-                continue;
-            }
-            v_data = (ngx_http_cnt_map_range_index_data_t *)
-                    cmvars[histograms[j].bound_idx].data;
-            if (v_data->range != NULL) {
-                boundary = v_data->range->elts;
-            }
-            vars = histograms[j].cnt_data.elts;
-            for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
-                if (boundary == NULL || v_data->range == NULL
-                    || k > v_data->range->nelts)
-                {
-                    ngx_str_set(&vars[k].tag, "+Inf");
-                    break;
-                }
-                vars[k].tag = boundary[k].s_value;
-            }
-        }
+    if (ngx_http_cnt_init_histograms(cycle) != NGX_OK) {
+        return NGX_ERROR;
     }
 
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
@@ -813,85 +757,6 @@ ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     v->not_found    = 0;
 
     return NGX_OK;
-}
-
-
-static ngx_int_t
-ngx_http_cnt_get_range_index(ngx_http_request_t *r,
-                             ngx_http_variable_value_t *v, uintptr_t  data)
-{
-    ngx_http_cnt_map_range_index_data_t  *v_data =
-            (ngx_http_cnt_map_range_index_data_t *) data;
-
-    ngx_uint_t                            i;
-    ngx_http_variable_value_t            *var;
-    static const size_t                   buf_size = 32;
-    u_char                                buf[buf_size], *p, *vbuf;
-    ngx_int_t                             len;
-    ngx_http_cnt_range_boundary_data_t   *range;
-    double                                val;
-
-    if (v_data == NULL) {
-        goto bad_data;
-    }
-
-    var = ngx_http_get_indexed_variable(r, v_data->idx);
-    if (var == NULL || !var->valid || var->not_found) {
-        goto bad_data;
-    }
-
-    len = ngx_min(var->len, buf_size - 1);
-    ngx_memcpy(buf, var->data, len);
-    buf[len] = '\0';
-
-    errno = 0;
-    val = strtod((char *) buf, (char **) &p);
-    if (errno != 0 || p - buf < len) {
-        goto bad_data;
-    }
-
-    if (v_data->range == NULL) {
-        v->len          = 1;
-        v->data         = (u_char *) "0";
-        v->valid        = 1;
-        v->no_cacheable = 0;
-        v->not_found    = 0;
-
-        return NGX_OK;
-    }
-
-    range = v_data->range->elts;
-
-    for (i = 0; i < v_data->range->nelts; i++) {
-        if (val <= range[i].value) {
-            break;
-        }
-    }
-
-    vbuf = ngx_pnalloc(r->pool, NGX_INT64_LEN);
-    if (vbuf == NULL) {
-        return NGX_ERROR;
-    }
-
-    p = ngx_sprintf(vbuf, "%i", (ngx_int_t) i);
-
-    v->len          = p - vbuf;
-    v->data         = vbuf;
-    v->valid        = 1;
-    v->no_cacheable = 0;
-    v->not_found    = 0;
-
-    return NGX_OK;
-
-bad_data:
-
-    v->len          = 5;
-    v->data         = (u_char *) "error";
-    v->valid        = 1;
-    v->no_cacheable = 0;
-    v->not_found    = 0;
-
-    return NGX_ERROR;
 }
 
 
@@ -1255,111 +1120,6 @@ ngx_http_cnt_counter_set_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     scf->cnt_set_id = value[1];
-
-    return NGX_CONF_OK;
-}
-
-
-static char *
-ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-    ngx_uint_t                            i;
-    ngx_str_t                            *value;
-    ngx_http_variable_t                  *v;
-    ngx_int_t                             v_idx;
-    ngx_http_cnt_map_range_index_data_t  *v_data;
-    ngx_array_t                          *v_range;
-    static const size_t                   buf_size = 32;
-    u_char                                buf[buf_size], *p;
-    ngx_int_t                             len;
-    ngx_http_cnt_range_boundary_data_t   *pcur;
-    double                                cur, prev = 0.0;
-
-    value = cf->args->elts;
-
-    if (value[2].len < 2 || value[2].data[0] != '$') {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid variable name \"%V\"", &value[2]);
-        return NGX_CONF_ERROR;
-    }
-    value[2].len--;
-    value[2].data++;
-
-    v = ngx_http_add_variable(cf, &value[2], NGX_HTTP_VAR_CHANGEABLE);
-    if (v == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    v->get_handler = ngx_http_cnt_get_range_index;
-    v_data = ngx_pcalloc(cf->pool,
-                         sizeof(ngx_http_cnt_map_range_index_data_t));
-    if (v_data == NULL) {
-        return NGX_CONF_ERROR;
-    }
-    v->data = (uintptr_t) v_data;
-
-    v_idx = ngx_http_get_variable_index(cf, &value[2]);
-    if (v_idx == NGX_ERROR) {
-        return NGX_CONF_ERROR;
-    }
-
-    if (value[1].len < 2 || value[1].data[0] != '$') {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid variable name \"%V\"", &value[1]);
-        return NGX_CONF_ERROR;
-    }
-    value[1].len--;
-    value[1].data++;
-
-    v_idx = ngx_http_get_variable_index(cf, &value[1]);
-    if (v_idx == NGX_ERROR) {
-        return NGX_CONF_ERROR;
-    }
-
-    v_data->idx = v_idx;
-
-    if (cf->args->nelts > 3) {
-        v_range = ngx_pcalloc(cf->pool, sizeof(ngx_array_t));
-        if (v_range == NULL
-            || ngx_array_init(v_range, cf->pool, cf->args->nelts - 3,
-                              sizeof(ngx_http_cnt_range_boundary_data_t))
-               != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
-
-        for (i = 3; i < cf->args->nelts; i++) {
-            len = ngx_min(value[i].len, buf_size - 1);
-            ngx_memcpy(buf, value[i].data, len);
-            buf[len] = '\0';
-
-            errno = 0;
-            cur = strtod((char *) buf, (char **) &p);
-            if (errno != 0 || p - buf < len) {
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "failed to read \"%V\" as double value",
-                                   &value[i]);
-                return NGX_CONF_ERROR;
-            }
-
-            if (i > 2 && prev >= cur) {
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "range must increase monotonically");
-                return NGX_CONF_ERROR;
-            }
-
-            pcur = ngx_array_push(v_range);
-            if (pcur == NULL) {
-                return NGX_CONF_ERROR;
-            }
-            pcur->value = cur;
-            pcur->s_value = value[i];
-
-            prev = cur;
-        }
-
-        v_data->range = v_range;
-    }
 
     return NGX_CONF_OK;
 }

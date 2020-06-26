@@ -23,22 +23,10 @@
 #include <ngx_http.h>
 
 
-typedef struct {
-    ngx_int_t                   idx;
-    ngx_str_t                   name;
-    ngx_str_t                   tag;         /* boundary for histogram bins */
-} ngx_http_cnt_var_handle_t;
-
-
-typedef struct {
-    ngx_int_t                   self;
-    ngx_int_t                   bound_idx;
-    ngx_array_t                 cnt_data;
-    ngx_http_cnt_var_handle_t   cnt_sum;
-    ngx_http_cnt_var_handle_t   cnt_err;
-} ngx_http_cnt_set_histogram_data_t;
-
-
 char *ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+ngx_int_t ngx_http_cnt_init_histograms(ngx_cycle_t *cycle);
+char *ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 
 #endif /* NGX_HTTP_CUSTOM_COUNTERS_HISTOGRAM_H */
+

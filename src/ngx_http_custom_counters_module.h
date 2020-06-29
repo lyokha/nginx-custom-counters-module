@@ -60,6 +60,7 @@ typedef struct {
 
 typedef struct {
     ngx_array_t                 cnt_sets;
+    ngx_str_t                   histograms;
     ngx_uint_t                  collection_buf_len;
 #ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
     ngx_str_t                   persistent_storage;

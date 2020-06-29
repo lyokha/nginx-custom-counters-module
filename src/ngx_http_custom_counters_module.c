@@ -165,6 +165,7 @@ static ngx_command_t  ngx_http_cnt_commands[] = {
 static ngx_http_variable_t  ngx_http_cnt_vars[] =
 {
     { ngx_string("cnt_collection"), NULL, ngx_http_cnt_collection, 0, 0, 0 },
+    { ngx_string("cnt_histograms"), NULL, ngx_http_cnt_histograms, 0, 0, 0 },
     { ngx_string("cnt_uptime"), NULL, ngx_http_cnt_uptime, 0, 0, 0 },
     { ngx_string("cnt_uptime_reload"), NULL, ngx_http_cnt_uptime, 1, 0, 0 },
 

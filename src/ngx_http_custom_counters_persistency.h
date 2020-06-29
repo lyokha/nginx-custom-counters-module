@@ -16,10 +16,10 @@
  * =============================================================================
  */
 
-#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-
 #ifndef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY_H
 #define NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY_H
+
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
 
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -36,7 +36,7 @@ ngx_int_t ngx_http_cnt_load_persistent_counters(ngx_log_t* log,
 ngx_int_t ngx_http_cnt_write_persistent_counters(ngx_http_request_t *r,
     ngx_cycle_t *cycle, ngx_uint_t backup);
 
-#endif /* NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY_H */
-
 #endif
+
+#endif /* NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY_H */
 

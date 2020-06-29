@@ -39,6 +39,7 @@ typedef struct {
 typedef struct {
     ngx_int_t                             self;
     ngx_int_t                             bound_idx;
+    ngx_str_t                             name;
     ngx_array_t                           cnt_data;
     ngx_http_cnt_histogram_var_handle_t   cnt_sum;
     ngx_http_cnt_histogram_var_handle_t   cnt_err;
@@ -215,6 +216,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (var->bound_idx == NGX_ERROR) {
             return NGX_CONF_ERROR;
         }
+        var->name = value[1];
 
         counter_op = ngx_array_push(&cf_cnt_args);
         if (counter_op == NULL) {
@@ -405,6 +407,8 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
     ngx_http_cnt_histogram_var_handle_t  *vars;
     ngx_http_cnt_map_range_index_data_t  *v_data;
     ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
+    u_char                               *buf, *last;
+    ngx_uint_t                            len = 2;
 
     cmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_core_module);
     cmvars = cmcf->variables.elts;
@@ -430,7 +434,7 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
             vars = histograms[j].cnt_data.elts;
             for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
                 if (boundary == NULL || v_data->range == NULL
-                    || k > v_data->range->nelts)
+                    || k == v_data->range->nelts)
                 {
                     ngx_str_set(&vars[k].tag, "+Inf");
                     break;
@@ -439,6 +443,87 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
             }
         }
     }
+
+    for (i = 0; i < mcf->cnt_sets.nelts; i++) {
+        len += 6 + cnt_sets[i].name.len;
+        histograms = cnt_sets[i].histograms.elts;
+        for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
+            len += 6 + 14 + histograms[j].cnt_sum.name.len
+                          + histograms[j].cnt_sum.tag.len
+                     + 14 + histograms[j].cnt_err.name.len
+                          + histograms[j].cnt_err.tag.len
+                     + 11 + histograms[j].name.len;
+            vars = histograms[j].cnt_data.elts;
+            for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
+                len += 6 + vars[k].name.len + vars[k].tag.len;
+            }
+        }
+    }
+
+    buf = ngx_pnalloc(cycle->pool, len);
+    if (buf == NULL) {
+        return NGX_ERROR;
+    }
+
+    last = ngx_sprintf(buf, "{");
+
+    for (i = 0; i < mcf->cnt_sets.nelts; i++) {
+        last = ngx_sprintf(last, "\"%V\":{", &cnt_sets[i].name);
+        histograms = cnt_sets[i].histograms.elts;
+        for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
+            last = ngx_sprintf(last, "\"%V\":{\"range\":{",
+                               &histograms[j].name);
+
+            vars = histograms[j].cnt_data.elts;
+            for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
+                last = ngx_sprintf(last, "\"%V\":\"%V\",",
+                                   &vars[k].name, &vars[k].tag);
+            }
+
+            if (k > 0) {
+                last--;
+            }
+
+            last = ngx_sprintf(last, "},");
+            last = ngx_sprintf(last, "\"sum\":[\"%V\",\"%V\"],",
+                               &histograms[j].cnt_sum.name,
+                               &histograms[j].cnt_sum.tag);
+            last = ngx_sprintf(last, "\"err\":[\"%V\",\"%V\"]},",
+                               &histograms[j].cnt_err.name,
+                               &histograms[j].cnt_err.tag);
+        }
+        if (j > 0) {
+            last--;
+        }
+
+        last = ngx_sprintf(last, "},");
+    }
+    if (i > 0) {
+        last--;
+    }
+
+    last = ngx_sprintf(last, "}");
+
+    mcf->histograms.data = buf;
+    mcf->histograms.len = last - buf;
+
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_http_cnt_histograms(ngx_http_request_t *r, ngx_http_variable_value_t *v,
+                        uintptr_t data)
+{
+    ngx_http_cnt_main_conf_t          *mcf;
+
+    mcf = ngx_http_get_module_main_conf(r, ngx_http_custom_counters_module);
+
+    v->len          = mcf->histograms.len;
+    v->data         = mcf->histograms.data;
+    v->valid        = 1;
+    v->no_cacheable = 0;
+    v->not_found    = 0;
 
     return NGX_OK;
 }

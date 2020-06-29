@@ -235,6 +235,8 @@ distribution, directive `map_range_index` can be used. For example,
         0.05;
 ```
 
+Histograms layout can be observed via predefined variable `$cnt_histograms`.
+
 shall return in variable `$request_time_bin` values from *0* to *3* depending on
 the value of variable `$request_time`: if the request time was less than or
 equal to *0.005* then its value will be *0*, otherwise, if the request time was
@@ -354,6 +356,10 @@ http {
 
         location /all {
             echo $cnt_collection;
+        }
+
+        location /histograms {
+            echo $cnt_histograms;
         }
     }
 
@@ -523,12 +529,47 @@ From this output, we can see that there were *70* requests spread in bins
 Let's see how to access all the bins at once and a specific bin.
 
 ```ShellSession
-$ curl -s 'http://127.0.0.1:8050/'
+$ curl 'http://127.0.0.1:8050/'
 all bins: 0,0,0,0,13,45,12,0,0,0,0
 bin 04:   13
 ```
 
-And we also have a way to reset the histogram.
+We can examine all histograms layout.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8020/histograms' | jq
+{
+  "main": {},
+  "other": {},
+  "test.histogram": {
+    "hst_request_time": {
+      "range": {
+        "$hst_request_time_00": "0.005",
+        "$hst_request_time_01": "0.01",
+        "$hst_request_time_02": "0.05",
+        "$hst_request_time_03": "0.1",
+        "$hst_request_time_04": "0.5",
+        "$hst_request_time_05": "1.0",
+        "$hst_request_time_06": "5.0",
+        "$hst_request_time_07": "10.0",
+        "$hst_request_time_08": "30.0",
+        "$hst_request_time_09": "60.0",
+        "$hst_request_time_10": "+Inf"
+      },
+      "sum": [
+        "$hst_request_time_sum",
+        "sum"
+      ],
+      "err": [
+        "$hst_request_time_err",
+        "err"
+      ]
+    }
+  }
+}
+```
+
+And we also have a way to reset a histogram.
 
 ```ShellSession
 $ curl -s 'http://127.0.0.1:8050/reset'

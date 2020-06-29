@@ -16,14 +16,14 @@
  * =============================================================================
  */
 
-#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
-
 #ifndef NGX_HTTP_CUSTOM_COUNTERS_FORWARD_JSMNTOK_H
 #define NGX_HTTP_CUSTOM_COUNTERS_FORWARD_JSMNTOK_H
 
+#ifdef NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY
+
 typedef struct jsmntok jsmntok_t;
 
-#endif /* NGX_HTTP_CUSTOM_COUNTERS_FORWARD_JSMNTOK_H */
-
 #endif
+
+#endif /* NGX_HTTP_CUSTOM_COUNTERS_FORWARD_JSMNTOK_H */
 

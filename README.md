@@ -572,24 +572,24 @@ $ curl -s 'http://127.0.0.1:8020/histograms' | jq
   "test.histogram": {
     "hst_request_time": {
       "range": {
-        "$hst_request_time_00": "0.005",
-        "$hst_request_time_01": "0.01",
-        "$hst_request_time_02": "0.05",
-        "$hst_request_time_03": "0.1",
-        "$hst_request_time_04": "0.5",
-        "$hst_request_time_05": "1.0",
-        "$hst_request_time_06": "5.0",
-        "$hst_request_time_07": "10.0",
-        "$hst_request_time_08": "30.0",
-        "$hst_request_time_09": "60.0",
-        "$hst_request_time_10": "+Inf"
+        "hst_request_time_00": "0.005",
+        "hst_request_time_01": "0.01",
+        "hst_request_time_02": "0.05",
+        "hst_request_time_03": "0.1",
+        "hst_request_time_04": "0.5",
+        "hst_request_time_05": "1.0",
+        "hst_request_time_06": "5.0",
+        "hst_request_time_07": "10.0",
+        "hst_request_time_08": "30.0",
+        "hst_request_time_09": "60.0",
+        "hst_request_time_10": "+Inf"
       },
       "sum": [
-        "$hst_request_time_sum",
+        "hst_request_time_sum",
         "sum"
       ],
       "err": [
-        "$hst_request_time_err",
+        "hst_request_time_err",
         "err"
       ]
     }

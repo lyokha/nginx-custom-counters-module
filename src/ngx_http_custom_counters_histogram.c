@@ -407,6 +407,7 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
     ngx_http_cnt_histogram_var_handle_t  *vars;
     ngx_http_cnt_map_range_index_data_t  *v_data;
     ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
+    ngx_str_t                             name;
     u_char                               *buf, *last;
     ngx_uint_t                            len = 2;
 
@@ -448,14 +449,15 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
         len += 6 + cnt_sets[i].name.len;
         histograms = cnt_sets[i].histograms.elts;
         for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
-            len += 6 + 14 + histograms[j].cnt_sum.name.len
+            len += 6 + 14 + histograms[j].cnt_sum.name.len - 1 /* skip dollar */
                           + histograms[j].cnt_sum.tag.len
-                     + 14 + histograms[j].cnt_err.name.len
+                     + 14 + histograms[j].cnt_err.name.len - 1 /* skip dollar */
                           + histograms[j].cnt_err.tag.len
                      + 11 + histograms[j].name.len;
             vars = histograms[j].cnt_data.elts;
             for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
-                len += 6 + vars[k].name.len + vars[k].tag.len;
+                len += 6 + vars[k].name.len - 1 /* skip dollar */
+                        + vars[k].tag.len;
             }
         }
     }
@@ -471,13 +473,20 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
         last = ngx_sprintf(last, "\"%V\":{", &cnt_sets[i].name);
         histograms = cnt_sets[i].histograms.elts;
         for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
+            /* all data that will be assigned to variable name shall always
+             * start with dollar sign + another symbol as it has been checked
+             * in ngx_http_cnt_counter_impl(), hence skipping the first sign
+             * (i.e. the dollar) must be safe */
+
             last = ngx_sprintf(last, "\"%V\":{\"range\":{",
                                &histograms[j].name);
 
             vars = histograms[j].cnt_data.elts;
             for (k = 0; k < histograms[j].cnt_data.nelts; k++) {
+                name.data = vars[k].name.data + 1;
+                name.len = vars[k].name.len - 1;
                 last = ngx_sprintf(last, "\"%V\":\"%V\",",
-                                   &vars[k].name, &vars[k].tag);
+                                   &name, &vars[k].tag);
             }
 
             if (k > 0) {
@@ -485,12 +494,14 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
             }
 
             last = ngx_sprintf(last, "},");
+            name.data = histograms[j].cnt_sum.name.data + 1;
+            name.len = histograms[j].cnt_sum.name.len - 1;
             last = ngx_sprintf(last, "\"sum\":[\"%V\",\"%V\"],",
-                               &histograms[j].cnt_sum.name,
-                               &histograms[j].cnt_sum.tag);
+                               &name, &histograms[j].cnt_sum.tag);
+            name.data = histograms[j].cnt_err.name.data + 1;
+            name.len = histograms[j].cnt_err.name.len - 1;
             last = ngx_sprintf(last, "\"err\":[\"%V\",\"%V\"]},",
-                               &histograms[j].cnt_err.name,
-                               &histograms[j].cnt_err.tag);
+                               &name, &histograms[j].cnt_err.tag);
         }
         if (j > 0) {
             last--;

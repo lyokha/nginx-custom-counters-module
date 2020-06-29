@@ -235,13 +235,13 @@ distribution, directive `map_range_index` can be used. For example,
         0.05;
 ```
 
-Histograms layout can be observed via predefined variable `$cnt_histograms`.
-
 shall return in variable `$request_time_bin` values from *0* to *3* depending on
 the value of variable `$request_time`: if the request time was less than or
 equal to *0.005* then its value will be *0*, otherwise, if the request time was
 less than or equal to *0.01* then its value will be *1*, and so later, finally,
 if the request time was more than *0.05* then its value will be *3*.
+
+Histograms layout can be observed via predefined variable `$cnt_histograms`.
 
 Nginx master uptime counters
 ----------------------------

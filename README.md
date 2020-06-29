@@ -534,7 +534,35 @@ all bins: 0,0,0,0,13,45,12,0,0,0,0
 bin 04:   13
 ```
 
-We can examine all histograms layout.
+And we also have a way to reset the histogram.
+
+```ShellSession
+$ curl -s 'http://127.0.0.1:8050/reset'
+Ok
+$ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
+{
+  "test.histogram": {
+    "hst_request_time_00": 0,
+    "hst_request_time_01": 0,
+    "hst_request_time_02": 0,
+    "hst_request_time_03": 0,
+    "hst_request_time_04": 0,
+    "hst_request_time_05": 0,
+    "hst_request_time_06": 0,
+    "hst_request_time_07": 0,
+    "hst_request_time_08": 0,
+    "hst_request_time_09": 0,
+    "hst_request_time_10": 0,
+    "hst_request_time_sum": 0,
+    "hst_request_time_err": 0
+  }
+}
+```
+
+Though is not present in this example, histogram operation *undo* disables
+changing the histogram in the scope where it is declared.
+
+Finally, we can examine how all histograms lay out in counter sets.
 
 ```ShellSession
 $ curl -s 'http://127.0.0.1:8020/histograms' | jq
@@ -568,34 +596,6 @@ $ curl -s 'http://127.0.0.1:8020/histograms' | jq
   }
 }
 ```
-
-And we also have a way to reset a histogram.
-
-```ShellSession
-$ curl -s 'http://127.0.0.1:8050/reset'
-Ok
-$ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
-{
-  "test.histogram": {
-    "hst_request_time_00": 0,
-    "hst_request_time_01": 0,
-    "hst_request_time_02": 0,
-    "hst_request_time_03": 0,
-    "hst_request_time_04": 0,
-    "hst_request_time_05": 0,
-    "hst_request_time_06": 0,
-    "hst_request_time_07": 0,
-    "hst_request_time_08": 0,
-    "hst_request_time_09": 0,
-    "hst_request_time_10": 0,
-    "hst_request_time_sum": 0,
-    "hst_request_time_err": 0
-  }
-}
-```
-
-Though is not present in this example, histogram operation *undo* disables
-changing the histogram in the scope where it is declared.
 
 Remarks on using location ifs and complex conditions
 ----------------------------------------------------

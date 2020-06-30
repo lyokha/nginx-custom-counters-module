@@ -24,7 +24,7 @@ static const ngx_int_t  ngx_http_cnt_histogram_max_bins = 32;
 
 
 typedef enum {
-    ngx_http_cnt_histogram_sum,
+    ngx_http_cnt_histogram_cnt,
     ngx_http_cnt_histogram_err
 } ngx_http_cnt_histogram_special_var_e;
 
@@ -41,7 +41,7 @@ typedef struct {
     ngx_int_t                             bound_idx;
     ngx_str_t                             name;
     ngx_array_t                           cnt_data;
-    ngx_http_cnt_histogram_var_handle_t   cnt_sum;
+    ngx_http_cnt_histogram_var_handle_t   cnt_cnt;
     ngx_http_cnt_histogram_var_handle_t   cnt_err;
 } ngx_http_cnt_set_histogram_data_t;
 
@@ -49,7 +49,7 @@ typedef struct {
 typedef struct {
     ngx_int_t                             idx;
     ngx_array_t                          *range;
-} ngx_http_cnt_map_range_index_data_t;
+} ngx_http_cnt_map_to_range_index_data_t;
 
 
 typedef struct {
@@ -307,7 +307,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
         if (ngx_http_cnt_histogram_special_var(&cf_cnt, conf, scf, counter_name,
                                                counter_op_value, value[1], idx,
-                                               var, ngx_http_cnt_histogram_sum)
+                                               var, ngx_http_cnt_histogram_cnt)
             != NGX_OK)
         {
             return NGX_CONF_ERROR;
@@ -349,7 +349,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                     return NGX_CONF_ERROR;
                 }
             }
-            *counter_name = vars[idx].cnt_sum.name;
+            *counter_name = vars[idx].cnt_cnt.name;
             if (ngx_http_cnt_counter_impl(&cf_cnt, NULL, conf, 0)) {
                 return NGX_CONF_ERROR;
             }
@@ -376,7 +376,7 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                     return NGX_CONF_ERROR;
                 }
             }
-            *counter_name = vars[idx].cnt_sum.name;
+            *counter_name = vars[idx].cnt_cnt.name;
             if (ngx_http_cnt_counter_impl(&cf_cnt, NULL, conf, 0)) {
                 return NGX_CONF_ERROR;
             }
@@ -398,18 +398,18 @@ ngx_http_cnt_histogram(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 ngx_int_t
 ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
 {
-    ngx_uint_t                            i, j, k;
-    ngx_http_core_main_conf_t            *cmcf;
-    ngx_http_cnt_main_conf_t             *mcf;
-    ngx_http_variable_t                  *cmvars;
-    ngx_http_cnt_set_histogram_data_t    *histograms;
-    ngx_http_cnt_set_t                   *cnt_sets;
-    ngx_http_cnt_histogram_var_handle_t  *vars;
-    ngx_http_cnt_map_range_index_data_t  *v_data;
-    ngx_http_cnt_range_boundary_data_t   *boundary = NULL;
-    ngx_str_t                             name;
-    u_char                               *buf, *last;
-    ngx_uint_t                            len = 2;
+    ngx_uint_t                               i, j, k;
+    ngx_http_core_main_conf_t               *cmcf;
+    ngx_http_cnt_main_conf_t                *mcf;
+    ngx_http_variable_t                     *cmvars;
+    ngx_http_cnt_set_histogram_data_t       *histograms;
+    ngx_http_cnt_set_t                      *cnt_sets;
+    ngx_http_cnt_histogram_var_handle_t     *vars;
+    ngx_http_cnt_map_to_range_index_data_t  *v_data;
+    ngx_http_cnt_range_boundary_data_t      *boundary = NULL;
+    ngx_str_t                                name;
+    u_char                                  *buf, *last;
+    ngx_uint_t                               len = 2;
 
     cmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_core_module);
     cmvars = cmcf->variables.elts;
@@ -427,7 +427,7 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
             {
                 continue;
             }
-            v_data = (ngx_http_cnt_map_range_index_data_t *)
+            v_data = (ngx_http_cnt_map_to_range_index_data_t *)
                     cmvars[histograms[j].bound_idx].data;
             if (v_data->range != NULL) {
                 boundary = v_data->range->elts;
@@ -449,8 +449,8 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
         len += 6 + cnt_sets[i].name.len;
         histograms = cnt_sets[i].histograms.elts;
         for (j = 0; j < cnt_sets[i].histograms.nelts; j++) {
-            len += 6 + 14 + histograms[j].cnt_sum.name.len - 1 /* skip dollar */
-                          + histograms[j].cnt_sum.tag.len
+            len += 6 + 14 + histograms[j].cnt_cnt.name.len - 1 /* skip dollar */
+                          + histograms[j].cnt_cnt.tag.len
                      + 14 + histograms[j].cnt_err.name.len - 1 /* skip dollar */
                           + histograms[j].cnt_err.tag.len
                      + 11 + histograms[j].name.len;
@@ -494,10 +494,10 @@ ngx_http_cnt_init_histograms(ngx_cycle_t *cycle)
             }
 
             last = ngx_sprintf(last, "},");
-            name.data = histograms[j].cnt_sum.name.data + 1;
-            name.len = histograms[j].cnt_sum.name.len - 1;
-            last = ngx_sprintf(last, "\"sum\":[\"%V\",\"%V\"],",
-                               &name, &histograms[j].cnt_sum.tag);
+            name.data = histograms[j].cnt_cnt.name.data + 1;
+            name.len = histograms[j].cnt_cnt.name.len - 1;
+            last = ngx_sprintf(last, "\"cnt\":[\"%V\",\"%V\"],",
+                               &name, &histograms[j].cnt_cnt.tag);
             name.data = histograms[j].cnt_err.name.data + 1;
             name.len = histograms[j].cnt_err.name.len - 1;
             last = ngx_sprintf(last, "\"err\":[\"%V\",\"%V\"]},",
@@ -541,19 +541,19 @@ ngx_http_cnt_histograms(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
 
 char *
-ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_cnt_map_to_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_uint_t                            i;
-    ngx_str_t                            *value;
-    ngx_http_variable_t                  *v;
-    ngx_int_t                             v_idx;
-    ngx_http_cnt_map_range_index_data_t  *v_data;
-    ngx_array_t                          *v_range;
-    static const size_t                   buf_size = 32;
-    u_char                                buf[buf_size], *p;
-    ngx_int_t                             len;
-    ngx_http_cnt_range_boundary_data_t   *pcur;
-    double                                cur, prev = 0.0;
+    ngx_uint_t                               i;
+    ngx_str_t                               *value;
+    ngx_http_variable_t                     *v;
+    ngx_int_t                                v_idx;
+    ngx_http_cnt_map_to_range_index_data_t  *v_data;
+    ngx_array_t                             *v_range;
+    static const size_t                      buf_size = 32;
+    u_char                                   buf[buf_size], *p;
+    ngx_int_t                                len;
+    ngx_http_cnt_range_boundary_data_t      *pcur;
+    double                                   cur, prev = 0.0;
 
     value = cf->args->elts;
 
@@ -572,7 +572,7 @@ ngx_http_cnt_map_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     v->get_handler = ngx_http_cnt_get_range_index;
     v_data = ngx_pcalloc(cf->pool,
-                         sizeof(ngx_http_cnt_map_range_index_data_t));
+                         sizeof(ngx_http_cnt_map_to_range_index_data_t));
     if (v_data == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -872,8 +872,8 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
     size_t                              size = 0;
 
     switch (type) {
-    case ngx_http_cnt_histogram_sum:
-        part = "_sum";
+    case ngx_http_cnt_histogram_cnt:
+        part = "_cnt";
         size = 4;
         bin_idx = NGX_DONE;
         break;
@@ -909,10 +909,10 @@ ngx_http_cnt_histogram_special_var(ngx_conf_t *cf, void *conf,
     counter_name->data -= 1;
     counter_name->len += 1;
     switch (type) {
-    case ngx_http_cnt_histogram_sum:
-        data->cnt_sum.idx = v_idx;
-        data->cnt_sum.name = *counter_name;
-        ngx_str_set(&data->cnt_sum.tag, "sum");
+    case ngx_http_cnt_histogram_cnt:
+        data->cnt_cnt.idx = v_idx;
+        data->cnt_cnt.name = *counter_name;
+        ngx_str_set(&data->cnt_cnt.tag, "cnt");
         break;
     case ngx_http_cnt_histogram_err:
         data->cnt_err.idx = v_idx;
@@ -975,16 +975,16 @@ static ngx_int_t
 ngx_http_cnt_get_range_index(ngx_http_request_t *r,
                              ngx_http_variable_value_t *v, uintptr_t  data)
 {
-    ngx_http_cnt_map_range_index_data_t  *v_data =
-            (ngx_http_cnt_map_range_index_data_t *) data;
+    ngx_http_cnt_map_to_range_index_data_t  *v_data =
+            (ngx_http_cnt_map_to_range_index_data_t *) data;
 
-    ngx_uint_t                            i;
-    ngx_http_variable_value_t            *var;
-    static const size_t                   buf_size = 32;
-    u_char                                buf[buf_size], *p, *vbuf;
-    ngx_int_t                             len;
-    ngx_http_cnt_range_boundary_data_t   *range;
-    double                                val;
+    ngx_uint_t                               i;
+    ngx_http_variable_value_t               *var;
+    static const size_t                      buf_size = 32;
+    u_char                                   buf[buf_size], *p, *vbuf;
+    ngx_int_t                                len;
+    ngx_http_cnt_range_boundary_data_t      *range;
+    double                                   val;
 
     if (v_data == NULL) {
         goto bad_data;

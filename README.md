@@ -222,14 +222,14 @@ it's expected that variable `$bound_var` will return numbers in range *0 &ndash;
 11* according to the number of the histogram bins. If it returns some unexpected
 value then variable `$hst_name_err` (which is declared implicitly) will be
 incremented instead of the histogram counters. The counters themselves and their
-sum value can be accessed directly via implicitly declared variables
-`$hst_name_00 .. $hst_name_11` and `$hst_name_sum`.
+full count value can be accessed directly via implicitly declared variables
+`$hst_name_00 .. $hst_name_11` and `$hst_name_cnt`.
 
 To simplify detection of the bin to increment in the case of a contiguous value
-distribution, directive `map_range_index` can be used. For example,
+distribution, directive `map_to_range_index` can be used. For example,
 
 ```nginx
-    map_range_index $request_time $request_time_bin
+    map_to_range_index $request_time $request_time_bin
         0.005
         0.01
         0.05;
@@ -271,7 +271,7 @@ http {
 
     access_log          /tmp/nginx-test-custom-counters-access.log;
 
-    map_range_index $request_time $request_time_bin
+    map_to_range_index $request_time $request_time_bin
         0.005
         0.01
         0.05
@@ -482,7 +482,7 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq
     "hst_request_time_08": 0,
     "hst_request_time_09": 0,
     "hst_request_time_10": 0,
-    "hst_request_time_sum": 0,
+    "hst_request_time_cnt": 0,
     "hst_request_time_err": 0
   }
 }
@@ -516,7 +516,7 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
     "hst_request_time_08": 0,
     "hst_request_time_09": 0,
     "hst_request_time_10": 0,
-    "hst_request_time_sum": 70,
+    "hst_request_time_cnt": 70,
     "hst_request_time_err": 0
   }
 }
@@ -553,7 +553,7 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq {\"test.histogram\"}
     "hst_request_time_08": 0,
     "hst_request_time_09": 0,
     "hst_request_time_10": 0,
-    "hst_request_time_sum": 0,
+    "hst_request_time_cnt": 0,
     "hst_request_time_err": 0
   }
 }
@@ -584,9 +584,9 @@ $ curl -s 'http://127.0.0.1:8020/histograms' | jq
         "hst_request_time_09": "60.0",
         "hst_request_time_10": "+Inf"
       },
-      "sum": [
-        "hst_request_time_sum",
-        "sum"
+      "cnt": [
+        "hst_request_time_cnt",
+        "cnt"
       ],
       "err": [
         "hst_request_time_err",

@@ -220,10 +220,15 @@ The upper line declares a histogram with *12* bins. The histogram must be bound
 to a variable to read the number of the bin to increment from. In this example,
 it's expected that variable `$bound_var` will return numbers in range *0 &ndash;
 11* according to the number of the histogram bins. If it returns some unexpected
-value then variable `$hst_name_err` (which is declared implicitly) will be
-incremented instead of the histogram counters. The counters themselves and their
-full count value can be accessed directly via implicitly declared variables
-`$hst_name_00 .. $hst_name_11` and `$hst_name_cnt`.
+value then variable `$hst_name_err` (which was declared implicitly) will be
+incremented instead of the range counters. The counters themselves and their
+cumulative count value can be accessed directly via implicitly declared
+variables `$hst_name_00 .. $hst_name_11` and `$hst_name_cnt`. Notice that
+rarely, when shown in variable `$cnt_collection`, the error and the count values
+can be very slightly inconsistent in relation to the range counters: this may
+happen because all counters get updated independently, and the updates may occur
+in the middle of building of the collection when there are more than one worker
+processes.
 
 To simplify detection of the bin to increment in the case of a contiguous value
 distribution, directive `map_to_range_index` can be used. For example,

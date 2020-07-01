@@ -622,7 +622,7 @@ ngx_http_cnt_map_to_range_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 return NGX_CONF_ERROR;
             }
 
-            if (i > 2 && prev >= cur) {
+            if (i > 3 && prev >= cur) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "range must increase monotonically");
                 return NGX_CONF_ERROR;

@@ -13,7 +13,7 @@ Table of contents
 - [Reloading Nginx configuration](#reloading-nginx-configuration)
 - [Persistent counters](#persistent-counters)
 - [Histograms](#histograms)
-- [Nginx master uptime counters](#nginx-master-uptime-counters)
+- [Predefined counters](#predefined-counters)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
 - [See also](#see-also)
@@ -248,14 +248,20 @@ if the request time was more than *0.05* then its value will be *3*.
 
 Histograms layout can be observed via predefined variable `$cnt_histograms`.
 
-Nginx master uptime counters
-----------------------------
+Predefined counters
+-------------------
 
-There are two predefined counter variables `$cnt_uptime` and
-`$cnt_uptime_reload` which contain the number of seconds elapsed since the start
-of Nginx. Reloading Nginx with *SIGHUP* won't restart the former counter. The
-counters are not associated with any counter set identifier, nor are they
-collected in variable `$cnt_collection`.
+There is a number of predefined counter variables: 7 counters from the Nginx
+stub status module (available only when Nginx was compiled with option
+*--with-http_stub_status_module*): `$cnt_stub_status_accepted`,
+`$cnt_stub_status_handled`, `$cnt_stub_status_requests`,
+`$cnt_stub_status_active`, `$cnt_stub_status_reading`,
+`$cnt_stub_status_writing`, `$cnt_stub_status_waiting`, and 2 counters related
+to Nginx master process uptime: `$cnt_uptime` and `$cnt_uptime_reload`, they
+contain the number of seconds elapsed since the start of Nginx. Reloading Nginx
+with *SIGHUP* won't restart the former counter. All predefined counters are not
+associated with any counter set identifier, nor are they collected in variable
+`$cnt_collection`.
 
 An example
 ----------

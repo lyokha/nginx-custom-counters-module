@@ -90,6 +90,10 @@ static ngx_int_t ngx_http_cnt_collection(ngx_http_request_t *r,
 static void ngx_http_cnt_set_collection_buf_len(ngx_http_cnt_main_conf_t *mcf);
 static ngx_int_t ngx_http_cnt_uptime(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+#if NGX_STAT_STUB
+static ngx_int_t ngx_http_cnt_stub_status(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
+#endif
 static char *ngx_http_cnt_counter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_cnt_early_counter(ngx_conf_t *cf, ngx_command_t *cmd,
@@ -168,6 +172,22 @@ static ngx_http_variable_t  ngx_http_cnt_vars[] =
     { ngx_string("cnt_histograms"), NULL, ngx_http_cnt_histograms, 0, 0, 0 },
     { ngx_string("cnt_uptime"), NULL, ngx_http_cnt_uptime, 0, 0, 0 },
     { ngx_string("cnt_uptime_reload"), NULL, ngx_http_cnt_uptime, 1, 0, 0 },
+#if NGX_STAT_STUB
+    { ngx_string("cnt_stub_status_accepted"), NULL, ngx_http_cnt_stub_status,
+                 0, 0, 0 },
+    { ngx_string("cnt_stub_status_handled"), NULL, ngx_http_cnt_stub_status,
+                 1, 0, 0 },
+    { ngx_string("cnt_stub_status_requests"), NULL, ngx_http_cnt_stub_status,
+                 2, 0, 0 },
+    { ngx_string("cnt_stub_status_active"), NULL, ngx_http_cnt_stub_status,
+                 3, 0, 0 },
+    { ngx_string("cnt_stub_status_reading"), NULL, ngx_http_cnt_stub_status,
+                 4, 0, 0 },
+    { ngx_string("cnt_stub_status_writing"), NULL, ngx_http_cnt_stub_status,
+                 5, 0, 0 },
+    { ngx_string("cnt_stub_status_waiting"), NULL, ngx_http_cnt_stub_status,
+                 6, 0, 0 },
+#endif
 
     { ngx_null_string, NULL, NULL, 0, 0, 0 }
 };
@@ -759,6 +779,69 @@ ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
 
     return NGX_OK;
 }
+
+
+#if NGX_STAT_STUB
+
+/* this handler was mostly taken from Nginx stub status module */
+
+static ngx_int_t
+ngx_http_cnt_stub_status(ngx_http_request_t *r, ngx_http_variable_value_t *v,
+                         uintptr_t data)
+{
+    u_char            *p;
+    ngx_atomic_int_t   value;
+
+    p = ngx_pnalloc(r->pool, NGX_ATOMIC_T_LEN);
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+
+    switch (data) {
+    case 0:
+        value = *ngx_stat_accepted;
+        break;
+
+    case 1:
+        value = *ngx_stat_handled;
+        break;
+
+    case 2:
+        value = *ngx_stat_requests;
+        break;
+
+    case 3:
+        value = *ngx_stat_active;
+        break;
+
+    case 4:
+        value = *ngx_stat_reading;
+        break;
+
+    case 5:
+        value = *ngx_stat_writing;
+        break;
+
+    case 6:
+        value = *ngx_stat_waiting;
+        break;
+
+    /* suppress warning */
+    default:
+        value = 0;
+        break;
+    }
+
+    v->len = ngx_sprintf(p, "%uA", value) - p;
+    v->valid = 1;
+    v->no_cacheable = 0;
+    v->not_found = 0;
+    v->data = p;
+
+    return NGX_OK;
+}
+
+#endif
 
 
 ngx_int_t

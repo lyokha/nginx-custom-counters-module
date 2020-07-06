@@ -689,7 +689,10 @@ counter *cnt_test_cookie_misc_vtag*.
 See also
 --------
 
-[*Универсальные счетчики в nginx: замечания к реализации
+1. [*Универсальные счетчики в nginx: замечания к реализации
 модуля*](http://lin-techdet.blogspot.com/2016/08/nginx.html) (in Russian).
 Remarks on implementation of the module.
+2. Haskell module
+[*NgxExport.Tools.Prometheus*](https://github.com/lyokha/ngx-export-tools-extra#module-ngxexporttoolsprometheus)
+to convert custom counters from this module to Prometheus metrics.
 

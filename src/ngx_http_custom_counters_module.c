@@ -664,8 +664,7 @@ ngx_http_cnt_build_collection(ngx_http_request_t *r, ngx_cycle_t *cycle,
     ngx_uint_t                         n_cnt_sets = 0;
     u_char                            *buf, *last;
 
-    collection->data = (u_char *) "{}";
-    collection->len = 2;
+    ngx_str_set(collection, "{}");
 
     if (r == NULL) {
         if (cycle == NULL) {

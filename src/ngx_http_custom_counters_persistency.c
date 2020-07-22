@@ -109,8 +109,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         } while (p != NULL);
 
         if (slash == NULL) {
-            dir_name.data = (u_char *) "./";
-            dir_name.len = 2;
+            ngx_str_set(&dir_name, "./");
         } else {
             dir_name.len = slash + 1 - file.name.data;
             dir_name.data = ngx_pnalloc(cf->pool, dir_name.len + 1);

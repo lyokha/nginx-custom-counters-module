@@ -212,6 +212,7 @@ associated with an arbitrary range.
 
 ```nginx
 histogram $hst_name 12 $bound_var;
+histogram $hst_name reuse;
 histogram $hst_name undo;
 histogram $hst_name reset;
 ```
@@ -245,6 +246,12 @@ the value of variable `$request_time`: if the request time was less than or
 equal to *0.005* then its value will be *0*, otherwise, if the request time was
 less than or equal to *0.01* then its value will be *1*, and so later, finally,
 if the request time was more than *0.05* then its value will be *3*.
+
+A histogram with the same name may be declared only once in a counter set.
+Sometimes it seems very restrictive, for example, when a histogram is supposed
+to collect data in two or more virtual servers. In this case, a histogram can be
+re-declared with directive *reuse*, given that it was already declared in this
+counter set in upper lines of the configuration.
 
 Histograms layout can be observed via predefined variable `$cnt_histograms`.
 

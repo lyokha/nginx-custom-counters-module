@@ -996,7 +996,7 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
     ngx_http_cnt_map_to_range_index_data_t  *v_data =
             (ngx_http_cnt_map_to_range_index_data_t *) data;
 
-    ngx_uint_t                               i;
+    ngx_int_t                                l = 0, m, h;
     ngx_http_variable_value_t               *var;
     static const size_t                      buf_size = 32;
     u_char                                   buf[buf_size], *p, *vbuf;
@@ -1034,10 +1034,14 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
     }
 
     range = v_data->range->elts;
+    h = v_data->range->nelts;
 
-    for (i = 0; i < v_data->range->nelts; i++) {
-        if (val <= range[i].value) {
-            break;
+    while (l < h) {
+        m = l + (h - l) / 2;
+        if (val > range[m].value) {
+            l = m + 1;
+        } else {
+            h = m;
         }
     }
 
@@ -1046,7 +1050,7 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
-    p = ngx_sprintf(vbuf, "%i", (ngx_int_t) i);
+    p = ngx_sprintf(vbuf, "%i", l);
 
     v->len          = p - vbuf;
     v->data         = vbuf;

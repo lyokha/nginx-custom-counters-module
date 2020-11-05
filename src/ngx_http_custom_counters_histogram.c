@@ -1036,6 +1036,7 @@ ngx_http_cnt_get_range_index(ngx_http_request_t *r,
     range = v_data->range->elts;
     h = v_data->range->nelts;
 
+    /* logarithmic inclusive upper bound search algorithm */
     while (l < h) {
         m = l + (h - l) / 2;
         if (val > range[m].value) {

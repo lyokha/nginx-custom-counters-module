@@ -135,7 +135,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (ngx_close_dir(&dir) == NGX_ERROR) {
-            ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+            ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                                ngx_close_dir_n " \"%V\" failed", &dir_name);
         }
 
@@ -181,7 +181,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
     if (!backup_not_found) {
         if (not_found) {
-            ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+            ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                                "backup persistent storage exists "
                                "while main persistent storage does not, "
                                "copying backup content into the main storage");
@@ -195,7 +195,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
             if (ngx_file_mtime(&file_info_backup) > ngx_file_mtime(&file_info))
             {
-                ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                                    "backup persistent storage was modified "
                                    "later than main persistent storage, "
                                    "copying its content into the main storage");
@@ -204,7 +204,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 /* close main persistent storage */
 
                 if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                                        ngx_close_file_n " \"%V\" failed",
                                        &file.name);
                 }
@@ -257,7 +257,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 }
 
                 if (ngx_close_file(backup_file.fd) == NGX_FILE_ERROR) {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                                        ngx_close_file_n " \"%V\" failed",
                                        &backup_file.name);
                 }
@@ -313,7 +313,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                                   mcf->persistent_storage.data, &copy_file)
                     != NGX_OK)
                 {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                                        "failed to copy backup persistent "
                                        "storage into main persistent storage");
                     break;
@@ -328,7 +328,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
 
             if (cleanup_backup) {
                 if (ngx_close_file(backup_file.fd) == NGX_FILE_ERROR) {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                                        ngx_close_file_n " \"%V\" failed",
                                        &backup_file.name);
                 }
@@ -340,11 +340,11 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 }
             } else {
                 if (file_size == 0) {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                    ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                                        "backup file \"%V\" was not copied as "
                                        "it was empty", &backup_file.name);
                 } else {
-                    ngx_conf_log_error(NGX_LOG_ALERT, cf, 0,
+                    ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                                        "backup file \"%V\" was not copied as "
                                        "it seemed to be corrupted",
                                        &backup_file.name);
@@ -399,7 +399,7 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     }
 
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
-        ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+        ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                            ngx_close_file_n " \"%V\" failed", &file.name);
     }
 
@@ -472,7 +472,7 @@ collection_check:
             }
 
             if (ngx_close_file(fd) == NGX_FILE_ERROR) {
-                ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+                ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                                    ngx_close_file_n " \"%V\" failed",
                                    &mcf->persistent_storage_backup);
             }
@@ -486,7 +486,7 @@ collection_check:
 cleanup:
 
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
-        ngx_conf_log_error(NGX_LOG_ALERT, cf, ngx_errno,
+        ngx_conf_log_error(NGX_LOG_ERR, cf, ngx_errno,
                            ngx_close_file_n " \"%V\" failed", &file.name);
     }
 

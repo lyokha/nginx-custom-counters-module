@@ -172,6 +172,8 @@ static ngx_http_variable_t  ngx_http_cnt_vars[] =
     { ngx_string("cnt_histograms"), NULL, ngx_http_cnt_histograms, 0, 0, 0 },
     { ngx_string("cnt_uptime"), NULL, ngx_http_cnt_uptime, 0, 0, 0 },
     { ngx_string("cnt_uptime_reload"), NULL, ngx_http_cnt_uptime, 1, 0, 0 },
+    { ngx_string("cnt_start_time"), NULL, ngx_http_cnt_uptime, 2, 0, 0 },
+    { ngx_string("cnt_start_time_reload"), NULL, ngx_http_cnt_uptime, 3, 0, 0 },
 #if NGX_STAT_STUB
     { ngx_string("cnt_stub_status_accepted"), NULL, ngx_http_cnt_stub_status,
                  0, 0, 0 },
@@ -764,11 +766,15 @@ ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         return NGX_ERROR;
     }
 
-    now = ngx_time();
-    start = data == 0 ? ngx_http_cnt_start_time :
-            ngx_http_cnt_start_time_reload;
+    start = (data & 0x1) == 0 ?
+            ngx_http_cnt_start_time : ngx_http_cnt_start_time_reload;
 
-    last = ngx_sprintf(buf, "%T", now - start);
+    if ((data & 0x2) == 0) {
+        now = ngx_time();
+        last = ngx_sprintf(buf, "%T", now - start);
+    } else {
+        last = ngx_sprintf(buf, "%T", start);
+    }
 
     v->len          = last - buf;
     v->data         = buf;

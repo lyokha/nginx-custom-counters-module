@@ -268,7 +268,7 @@ to the Nginx master process timing: `$cnt_uptime` and `$cnt_uptime_reload` which
 contain the number of seconds elapsed since the start and the last reload of the
 master process respectively, and `$cnt_start_time` and `$cnt_start_time_reload`
 which contain the timestamps (in seconds elapsed since the start of the UNIX
-Epoch) of the master process start and the last reload respectively.
+Epoch) of the start and the last reload of the master process respectively.
 
 All predefined counters are not associated with any counter set identifier, nor
 are they collected in variable `$cnt_collection`.

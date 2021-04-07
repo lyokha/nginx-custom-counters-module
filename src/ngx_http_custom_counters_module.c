@@ -759,7 +759,7 @@ ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
                     uintptr_t data)
 {
     u_char                            *buf, *last;
-    time_t                             now, start;
+    time_t                             res, start;
 
     buf = ngx_pnalloc(r->pool, NGX_TIME_T_LEN);
     if (buf == NULL) {
@@ -769,12 +769,9 @@ ngx_http_cnt_uptime(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     start = (data & 0x1) == 0 ?
             ngx_http_cnt_start_time : ngx_http_cnt_start_time_reload;
 
-    if ((data & 0x2) == 0) {
-        now = ngx_time();
-        last = ngx_sprintf(buf, "%T", now - start);
-    } else {
-        last = ngx_sprintf(buf, "%T", start);
-    }
+    res = (data & 0x2) == 0 ? ngx_time() - start : start;
+
+    last = ngx_sprintf(buf, "%T", res);
 
     v->len          = last - buf;
     v->data         = buf;

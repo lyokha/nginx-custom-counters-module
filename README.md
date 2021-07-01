@@ -312,6 +312,7 @@ http {
 
         counter $cnt_all_requests inc;
 
+        set $inc_a_requests 0;
         if ($arg_a) {
             set $inc_a_requests 1;
         }
@@ -485,7 +486,6 @@ $ curl -s 'http://127.0.0.1:8020/all' | jq
     "cnt_test_a_requests": 9,
     "cnt_test_b_requests": 1,
     "ecnt_test_requests": 1,
-    "cnt_test0_requests": 1,
     "cnt_bytes_sent": 949
   },
   "other": {

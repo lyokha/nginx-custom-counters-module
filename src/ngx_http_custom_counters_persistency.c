@@ -293,9 +293,15 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
                 jsmn_init(&jparse);
 
                 jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
-                if (jrc < 0 || jtok[0].type != JSMN_OBJECT) {
+                if (jrc < 0) {
                     ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                                        "JSON parse error: %d", jrc);
+                    break;
+                }
+                if (jtok[0].type != JSMN_OBJECT) {
+                    ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                                       "unexpected structure of JSON data: "
+                                       "the whole data is not an object");
                     break;
                 }
 
@@ -432,8 +438,17 @@ ngx_http_cnt_counters_persistent_storage(ngx_conf_t *cf, ngx_command_t *cmd,
     jsmn_init(&jparse);
 
     jrc = jsmn_parse(&jparse, (char *) buf, file_size, jtok, jsz);
-    if (jrc < 0 || jtok[0].type != JSMN_OBJECT) {
+    if (jrc < 0) {
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "JSON parse error: %d", jrc);
+        ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                           "file \"%V\" is corrupted, delete it and run again",
+                           &file.name);
+        return NGX_CONF_ERROR;
+    }
+    if (jtok[0].type != JSMN_OBJECT) {
+        ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                           "unexpected structure of JSON data: "
+                           "the whole data is not an object");
         ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
                            "file \"%V\" is corrupted, delete it and run again",
                            &file.name);

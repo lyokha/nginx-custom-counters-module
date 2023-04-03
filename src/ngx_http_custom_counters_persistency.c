@@ -21,7 +21,7 @@
 #include "ngx_http_custom_counters_module.h"
 #include "ngx_http_custom_counters_persistency.h"
 
-#define STATIC_JSMN
+#define JSMN_STATIC
 #define JSMN_STRICT
 #include <jsmn.h>
 

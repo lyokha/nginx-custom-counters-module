@@ -25,6 +25,7 @@ jobs:
       - name: Install and test
         env:
           NGXVER: ${{ matrix.nginx }}
+          JSMN_REV: 25647e692c7906b96ffd2b05ca54c097948e879c
         run: |
           if [ "$NGXVER" = head ]
           then
@@ -33,7 +34,11 @@ jobs:
               wget http://nginx.org/download/nginx-${NGXVER}.tar.gz &&
                   tar xzvf nginx-${NGXVER}.tar.gz
           fi
+
+          sudo wget -P /usr/include \
+              https://raw.githubusercontent.com/zserge/jsmn/$JSMN_REV/jsmn.h
           git clone https://github.com/openresty/echo-nginx-module.git
+
           cd nginx-${NGXVER}/
           if [ "$NGXVER" = head ]
           then
@@ -41,11 +46,14 @@ jobs:
           else
               NGX_CONFIGURE=./configure
           fi
+          NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY=yes \
           $NGX_CONFIGURE --with-http_stub_status_module --add-module=.. \
               --add-module=../echo-nginx-module
           make -j2
           export PATH="$(pwd)/objs:$PATH"
           cd -
+
           cd test
-          prove -r t
+          prove t/basic.t
+          prove t/check-persistency.t
 

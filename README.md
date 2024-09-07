@@ -1,6 +1,8 @@
 Nginx Custom Counters module
 ============================
 
+[![Build Status](https://github.com/lyokha/nginx-custom-counters-module/workflows/CI/badge.svg)](https://github.com/lyokha/nginx-custom-counters-module/actions?query=workflow%3ACI)
+
 This Nginx module features customizable counters shared by all worker processes
 and, optionally, by configured sets of virtual servers.
 

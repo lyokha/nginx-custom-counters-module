@@ -9,7 +9,7 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       matrix:
-        nginx: [1.22.1, 1.24.0, 1.26.3]
+        nginx: [1.22.1, 1.24.0, 1.26.3, 1.28.0]
         experimental: [false]
         include:
           - nginx: head

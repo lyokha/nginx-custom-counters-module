@@ -745,7 +745,7 @@ With command *prove* from Perl module *Test::Harness* and Perl module
 *test/*.
 
 ```ShellSession
-$ prove -r t
+$ prove t/basic.t t/check-persistency.t
 ```
 
 Add option *-v* for verbose output. Before run, you may need to adjust

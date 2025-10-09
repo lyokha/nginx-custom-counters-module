@@ -54,6 +54,5 @@ jobs:
           cd -
 
           cd test
-          prove t/basic.t
-          prove t/check-persistency.t
+          prove t/basic.t t/check-persistency.t
 

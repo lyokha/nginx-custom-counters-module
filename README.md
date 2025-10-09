@@ -18,6 +18,7 @@ Table of contents
 - [Predefined counters](#predefined-counters)
 - [An example](#an-example)
 - [Remarks on using location ifs and complex conditions](#remarks-on-using-location-ifs-and-complex-conditions)
+- [Build and test](#build-and-test)
 - [See also](#see-also)
 
 Directives
@@ -186,7 +187,7 @@ written into the backup storage. The name of the backup file corresponds to the
 name of the main persistent storage with suffix *~* added. The file gets written
 by a worker process when a user request comes to a virtual server associated
 with an existing counter set and the specified time interval from the last write
-has elapsed. 
+has elapsed.
 
 Writing to the backup storage can be useful to restore persistent counters on
 power outage or *kill -9* of the Nginx master process. In such cases the main
@@ -699,6 +700,59 @@ $ curl -b 'Misc=bW9kZT10ZXN0LHY9Mg==' 'http://localhost:8010/test'
 (value *bW9kZT10ZXN0LHY9Mg==* is base64-encoded string *mode=test,v=2*, try
 other variants with or without a version tag too), and watch the value of the
 counter *cnt_test_cookie_misc_vtag*.
+
+Build and test
+--------------
+
+The module is built with the standard Nginx build approach from the directory
+with Nginx source files. If you want to link this module with the Nginx
+executable file statically, use *configure* option *--add-module*, e.g.
+
+```ShellSession
+$ ./configure --add-module=/path/to/this/module
+$ make
+$ sudo make install
+```
+
+To use the module as a dynamic library, choose option *--add-dynamic-module*.
+
+```ShellSession
+$ ./configure --add-dynamic-module=/path/to/this/module
+$ make
+$ sudo make install
+```
+
+In the latter case, put directive
+
+```nginx
+load_module modules/ngx_http_custom_counters_module.so
+```
+
+in the Nginx configuration file.
+
+To benefit from persistent counters, set environment variable
+*$NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY* to *y* or *yes*.
+
+```ShellSession
+$ NGX_HTTP_CUSTOM_COUNTERS_PERSISTENCY=yes ./configure --add-module=/path/to/this/module
+```
+
+The configuration script tests the availability of the *JSMN* library
+automatically.
+
+With command *prove* from Perl module *Test::Harness* and Perl module
+*Test::Nginx::Socket*, tests can be run by a regular user from directory
+*test/*.
+
+```ShellSession
+$ prove -r t
+```
+
+Add option *-v* for verbose output. Before run, you may need to adjust
+environment variable *PATH* to point to the Nginx installation directory.
+
+Note that the tests in directory *test/* expect that the module was built with
+support of persistent counters.
 
 See also
 --------

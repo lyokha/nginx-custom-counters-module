@@ -2,6 +2,16 @@
 
 use Test::Nginx::Socket;
 
+my $servroot = $Test::Nginx::Socket::ServRoot;
+$servroot =~ s"([^/])$"$1/";
+my $counters = '../counters.json';
+for my $file ($servroot . $counters, $servroot . $counters . '~')
+{
+    if (-f $file) {
+        unlink $file if -e $file or die "Could not unlink $file: $!";
+    }
+}
+
 repeat_each(1);
 plan tests => repeat_each() * (2 * blocks());
 

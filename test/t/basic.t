@@ -2,15 +2,23 @@
 
 use Test::Nginx::Socket;
 
-my $servroot = $Test::Nginx::Socket::ServRoot;
-$servroot =~ s"([^/])$"$1/";
-my $counters = '../counters.json';
-for my $file ($servroot . $counters, $servroot . $counters . '~')
-{
+my $counters_file = '../counters.json';
+
+(my $servroot = server_root()) =~ s"([^/])$"$1/";
+for my $file ($servroot . $counters_file, $servroot . $counters_file . '~') {
     if (-f $file) {
         unlink $file if -e $file or die "Could not unlink $file: $!";
     }
 }
+
+add_block_preprocessor(sub {
+    my $block = shift;
+    if (defined $block->http_config) {
+        my $http_config = $block->http_config;
+        $http_config =~ s/;;PUT_COUNTERS_FILE_HERE;;/$counters_file/;
+        $block->set_value("http_config", $http_config);
+    }
+});
 
 repeat_each(1);
 plan tests => repeat_each() * (2 * blocks());
@@ -38,7 +46,7 @@ __DATA__
 
     counters_survive_reload on;
 
-    counters_persistent_storage ../counters.json 10s;
+    counters_persistent_storage ;;PUT_COUNTERS_FILE_HERE;; 10s;
 
     server {
         listen          8010;
@@ -81,7 +89,7 @@ __DATA__
 
         counter $cnt_bytes_sent inc $bytes_sent;
     }
-    
+
     server {
         listen          8020;
         server_name     monitor.main;

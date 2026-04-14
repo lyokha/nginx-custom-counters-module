@@ -54,5 +54,5 @@ jobs:
           cd -
 
           cd test
-          prove t/basic.t t/check-persistency.t
+          NGXVER="$NGXVER" prove t/basic.t t/check-persistency.t
 

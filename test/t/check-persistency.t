@@ -1,5 +1,6 @@
 # vi:filetype=
 
+use version;
 use Test::Nginx::Socket;
 
 my $counters_file = '../counters.json';
@@ -178,6 +179,6 @@ __DATA__
 --- request
 GET /8020/all
 --- response_body eval
-sprintf('{"main":{"cnt_all_requests":5,"cnt_a_requests":9,"cnt_test1_requests":5,"cnt_test2_requests":5,"cnt_test3_requests":5,"cnt_test_requests":4,"cnt_test_a_requests":9,"cnt_test_b_requests":1,"ecnt_test_requests":1,"cnt_bytes_sent":%d},"other":{"cnt_test1_requests":0},"test.histogram":{"hst_request_time_00":0,"hst_request_time_01":0,"hst_request_time_02":0,"hst_request_time_03":0,"hst_request_time_04":0,"hst_request_time_05":0,"hst_request_time_06":0,"hst_request_time_07":0,"hst_request_time_08":0,"hst_request_time_09":0,"hst_request_time_10":0,"hst_request_time_cnt":0,"hst_request_time_err":0}}%s', $ENV{NGXVER} eq 'head' ? 879 : 737, "\n")
+sprintf('{"main":{"cnt_all_requests":5,"cnt_a_requests":9,"cnt_test1_requests":5,"cnt_test2_requests":5,"cnt_test3_requests":5,"cnt_test_requests":4,"cnt_test_a_requests":9,"cnt_test_b_requests":1,"ecnt_test_requests":1,"cnt_bytes_sent":%d},"other":{"cnt_test1_requests":0},"test.histogram":{"hst_request_time_00":0,"hst_request_time_01":0,"hst_request_time_02":0,"hst_request_time_03":0,"hst_request_time_04":0,"hst_request_time_05":0,"hst_request_time_06":0,"hst_request_time_07":0,"hst_request_time_08":0,"hst_request_time_09":0,"hst_request_time_10":0,"hst_request_time_cnt":0,"hst_request_time_err":0}}%s', $ENV{NGXVER} eq 'head' || version->parse('v'.$ENV{NGXVER}) >= version->parse('v1.30') ? 879 : 737, "\n")
 --- error_code: 200
 
